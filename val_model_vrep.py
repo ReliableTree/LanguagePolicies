@@ -30,7 +30,7 @@ HEADLESS            = False
 USE_SHAPE_SIZE      = True
 # Run on the test data, or start the simulator in manual mode 
 # (manual mode will allow you to generate environments and type in your own commands)
-RUN_ON_TEST_DATA    = True
+RUN_ON_TEST_DATA    = False
 # How many of the 100 test-data do you want to test?
 NUM_TESTED_DATA     = 100
 # Where to find the normailization?
