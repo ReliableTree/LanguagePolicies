@@ -7,6 +7,7 @@ from policy_translation.srv import NetworkPT
 from pyrep import PyRep
 from pyrep.objects.vision_sensor import VisionSensor
 from utils.voice import Voice
+from utils.safe_cfeatures import load_obj, save_dict_of_features, delete_dict
 import sys
 import select
 import numpy as np
@@ -30,9 +31,9 @@ HEADLESS            = False
 USE_SHAPE_SIZE      = True
 # Run on the test data, or start the simulator in manual mode 
 # (manual mode will allow you to generate environments and type in your own commands)
-RUN_ON_TEST_DATA    = False
+RUN_ON_TEST_DATA    = True
 # How many of the 100 test-data do you want to test?
-NUM_TESTED_DATA     = 100
+NUM_TESTED_DATA     = 1
 # Where to find the normailization?
 NORM_PATH           = "../GDrive/normalization_v2.pkl"
 # Where to find the VRep scene file. This has to be an absolute path. 
@@ -428,7 +429,11 @@ class Simulator(object):
                 eval_data["success"] = True
                 successfull += 1
             val_data[data["name"]] = eval_data
-            
+            dict_of_features = load_obj('dict_of_features')
+            # dict_of_features = {'prompt' : [{feature1 : data, ...}, {feature1 : data, ..}], ...} #for every promt, the resulting features are saved in a dict. The dicts are saved in a list where the last element is the last run
+            dict_of_prompt = dict_of_features[str(data["voice"])][-1] 
+            dict_of_prompt['success'] = eval_data["success"]
+            save_dict_of_features(dict_of_features, override=True)
         return successfull, val_data
     
     def valPhase2(self, files, feedback=True):
@@ -490,6 +495,8 @@ class Simulator(object):
         return successfull, val_data
 
     def evalDirect(self, runs):
+        #delete my data dict at beginning
+        delete_dict()
         files = glob.glob("../GDrive/testdata/*_1.json")
         self.node.get_logger().info("Using data directory with {} files".format(len(files)))
         files = files[:runs]

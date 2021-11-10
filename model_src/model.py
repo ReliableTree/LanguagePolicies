@@ -1,6 +1,7 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
 import tensorflow as tf
+import numpy as np
 import pathlib
 from model_src.attention import TopDownAttention
 from model_src.glove import GloveEmbeddings
@@ -45,7 +46,7 @@ class PolicyTranslationModel(tf.keras.Model):
         return_sequences=True)
            
     @tf.function
-    def call(self, inputs, training=False, use_dropout=True):
+    def call(self, inputs, training=False, use_dropout=True, node = None):
         if training:
             use_dropout = True
 
@@ -53,6 +54,7 @@ class PolicyTranslationModel(tf.keras.Model):
         features   = inputs[1]
         # local      = features[:,:,:5]
         robot      = inputs[2]
+
         # dmp_state  = inputs[3]
         batch_size = tf.shape(language)[0]
 
@@ -69,6 +71,7 @@ class PolicyTranslationModel(tf.keras.Model):
 
         # Add the language to the mix again. Possibly usefull to predict dt
         start_joints  = robot[:,0,:]
+
         cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
 
         # Policy Translation: Create weight + goal for DMP
@@ -84,7 +87,7 @@ class PolicyTranslationModel(tf.keras.Model):
         ]
         generated, phase, weights = self.controller(inputs=robot, constants=(cfeatures, dmp_dt), initial_state=initial_state, training=training)
 
-        return generated, (atn, dmp_dt, phase, weights)
+        return generated, (atn, dmp_dt, phase, weights, cfeatures)
     
     def getVariables(self, step=None):
         return self.trainable_variables

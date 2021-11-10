@@ -11,6 +11,7 @@ from model_src.model import PolicyTranslationModel
 from utils.network import Network
 from utils.tf_util import trainOnCPU, limitGPUMemory
 from utils.intprim.gaussian_model import GaussianModel
+from utils.safe_cfeatures import save_dict_of_features
 import tensorflow as tf
 import numpy as np
 import re
@@ -22,6 +23,7 @@ import glob
 import json
 import pickle
 import copy
+
 
 # Force TensorFlow to use the CPU
 FORCE_CPU    = True
@@ -185,13 +187,15 @@ class NetworkService():
         self.history.append(list(req.robot)) 
 
         robot           = np.asarray(self.history, dtype=np.float32)
+        rob_in = tf.convert_to_tensor(np.tile([robot],[250, 1, 1]), dtype=tf.float32)
         self.input_data = (
             tf.convert_to_tensor(np.tile([self.language],[250, 1]), dtype=tf.int64), 
             tf.convert_to_tensor(np.tile([self.features],[250, 1, 1]), dtype=tf.float32),
             tf.convert_to_tensor(np.tile([robot],[250, 1, 1]), dtype=tf.float32)
         )
+        #HENDRIK
+        generated, (atn, dmp_dt, phase, weights, cfeatures) = model(self.input_data, training=tf.constant(False), use_dropout=tf.constant(True), node = self.node)
 
-        generated, (atn, dmp_dt, phase, weights) = model(self.input_data, training=tf.constant(False), use_dropout=tf.constant(True))
         self.trj_gen    = tf.math.reduce_mean(generated, axis=0).numpy()
         self.trj_std    = tf.math.reduce_std(generated, axis=0).numpy()
         self.timesteps  = int(tf.math.reduce_mean(dmp_dt).numpy() * 500)
@@ -217,7 +221,16 @@ class NetworkService():
             for w in range(trj_len):
                 gen_trajectory.append(trajectories[w,w,:])
             gen_trajectory = np.asarray(gen_trajectory)
-            np.save("gen_trajectory", gen_trajectory)            
+            np.save("gen_trajectory", gen_trajectory)     
+            dict_of_features = {
+                'prompt' : str(req.language),
+                'cfeatures' : cfeatures[0].numpy(),
+                'attn' : atn.numpy(),
+                'features' : self.features
+            }
+            save_dict_of_features(dict_of_features, str(req.language))
+
+            #save_cfeature(cfeatures[0].numpy(), str(req.language))
 
             self.sfp_history = []
         
