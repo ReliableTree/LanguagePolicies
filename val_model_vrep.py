@@ -33,7 +33,7 @@ USE_SHAPE_SIZE      = True
 # (manual mode will allow you to generate environments and type in your own commands)
 RUN_ON_TEST_DATA    = True
 # How many of the 100 test-data do you want to test?
-NUM_TESTED_DATA     = 1
+NUM_TESTED_DATA     = 100
 # Where to find the normailization?
 NORM_PATH           = "../GDrive/normalization_v2.pkl"
 # Where to find the VRep scene file. This has to be an absolute path. 
@@ -429,12 +429,21 @@ class Simulator(object):
                 eval_data["success"] = True
                 successfull += 1
             val_data[data["name"]] = eval_data
+            self.write_success_in_cfeature_dict(promt = str(data["voice"]), success = eval_data["success"])
+            #dict_of_features = load_obj('dict_of_features')
+            # dict_of_features = {'prompt' : [{feature1 : data, ...}, {feature1 : data, ..}], ...} #for every promt, the resulting features are saved in a dict. The dicts are saved in a list where the last element is the last run
+            #dict_of_prompt = dict_of_features[str(data["voice"])][-1] 
+            #dict_of_prompt['success'] = eval_data["success"]
+            #save_dict_of_features(dict_of_features, override=True)
+        return successfull, val_data
+
+    def write_success_in_cfeature_dict(self, promt, success):
             dict_of_features = load_obj('dict_of_features')
             # dict_of_features = {'prompt' : [{feature1 : data, ...}, {feature1 : data, ..}], ...} #for every promt, the resulting features are saved in a dict. The dicts are saved in a list where the last element is the last run
-            dict_of_prompt = dict_of_features[str(data["voice"])][-1] 
-            dict_of_prompt['success'] = eval_data["success"]
+            dict_of_prompt = dict_of_features[promt][-1] 
+            dict_of_prompt['success'] = success
             save_dict_of_features(dict_of_features, override=True)
-        return successfull, val_data
+
     
     def valPhase2(self, files, feedback=True):
         successfull         = 0
@@ -491,7 +500,7 @@ class Simulator(object):
             else:
                 eval_data["success"] = False
             val_data[data["name"]] = eval_data
-            
+        self.write_success_in_cfeature_dict(promt = str(data["voice"]), success = eval_data["success"])
         return successfull, val_data
 
     def evalDirect(self, runs):
