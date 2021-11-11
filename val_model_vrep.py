@@ -31,7 +31,7 @@ HEADLESS            = False
 USE_SHAPE_SIZE      = True
 # Run on the test data, or start the simulator in manual mode 
 # (manual mode will allow you to generate environments and type in your own commands)
-RUN_ON_TEST_DATA    = True
+RUN_ON_TEST_DATA    = False
 # How many of the 100 test-data do you want to test?
 NUM_TESTED_DATA     = 100
 # Where to find the normailization?
@@ -500,7 +500,7 @@ class Simulator(object):
             else:
                 eval_data["success"] = False
             val_data[data["name"]] = eval_data
-        self.write_success_in_cfeature_dict(promt = str(data["voice"]), success = eval_data["success"])
+            self.write_success_in_cfeature_dict(promt = str(data["voice"]), success = eval_data["success"])
         return successfull, val_data
 
     def evalDirect(self, runs):
@@ -620,6 +620,7 @@ class Simulator(object):
     def runManually(self):
         self.rm_voice = ""
         run  = True
+        delete_dict()
         while run:
             self.pyrep.step()
             if select.select([sys.stdin,],[],[],0.0)[0]:
