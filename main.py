@@ -15,6 +15,7 @@ import shutil
 import os.path
 import sys
 
+
 # Location of the training data
 TRAIN_DATA      = "../GDrive/train.tfrecord"
 # Location of the validation data
@@ -36,10 +37,7 @@ WEIGHT_PHS      = 1.0
 # Number of epochs to train
 TRAIN_EPOCHS    = 200
 
-trainOnCPU()
 
-hid             = hashids.Hashids()
-LOGNAME         = hid.encode(int(time.time() * 1000000))
 
 class DatasetRSS():
     def __init__(self, record_path):
@@ -94,5 +92,9 @@ def setupModel():
     network.train(epochs=TRAIN_EPOCHS)
     return network
 
-network = setupModel()
-# model.summary()
+if __name__ == '__main__':
+    trainOnCPU()
+    hid             = hashids.Hashids()
+    LOGNAME         = hid.encode(int(time.time() * 1000000))
+    network = setupModel()
+    # model.summary()

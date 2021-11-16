@@ -170,8 +170,10 @@ class NetworkService():
             language = self.tokenize(req.language)
             self.language = language + [0] * (15-len(language))
 
+            print('image features')
+            print(image.shape)
             image_features = model.frcnn(tf.convert_to_tensor([image], dtype=tf.uint8))
-
+            print(image_features["detection_scores"].shape)
             scores   = image_features["detection_scores"][0, :6].numpy().astype(dtype=np.float32)
             scores   = [0.0 if v < 0.5 else 1.0 for v in scores.tolist()]
 
@@ -194,7 +196,7 @@ class NetworkService():
             tf.convert_to_tensor(np.tile([robot],[250, 1, 1]), dtype=tf.float32)
         )
         #HENDRIK
-        generated, (atn, dmp_dt, phase, weights, cfeatures) = model(self.input_data, training=tf.constant(False), use_dropout=tf.constant(True), node = self.node)
+        generated, (atn, dmp_dt, phase, weights, cfeatures) = model(self.input_data, training=tf.constant(False), use_dropout=tf.constant(True), node = self.node, return_cfeature = True)
 
         self.trj_gen    = tf.math.reduce_mean(generated, axis=0).numpy()
         self.trj_std    = tf.math.reduce_std(generated, axis=0).numpy()

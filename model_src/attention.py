@@ -19,7 +19,6 @@ class TopDownAttention(tf.keras.layers.Layer):
 
         language = tf.tile(tf.expand_dims(language, 1), [1, k, 1])            # bxkxm
         att_in   = tf.keras.backend.concatenate((language, features), axis=2) # bxkx(m+n)
-        
         y_1 = self.w1(att_in)
         y_2 = self.w2(att_in)
         y   = tf.math.multiply(y_1, y_2)

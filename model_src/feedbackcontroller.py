@@ -36,8 +36,12 @@ class FeedbackController(tf.keras.layers.Layer):
         in_robot           = tf.cond(tf.convert_to_tensor(training), lambda: st_robot_last, lambda: in_robot)
         e_robot, gru_state = self.robot_gru(inputs=in_robot, states=[st_gru_last])
 
+        print('GRU output')
+        print(e_robot.shape)
         # Internal state:
         x = tf.keras.backend.concatenate((cn_features, e_robot), axis=1)
+        print('x shape')
+        print(x.shape)
 
         # Use x to calcate the weights:
         weights = self.weight_dense_3(self.weight_dense_2(self.weight_dense_1(x)))
@@ -49,6 +53,7 @@ class FeedbackController(tf.keras.layers.Layer):
         phase = phase + dt
 
         # Apply basis model:
+        # change input for torch versino
         action, _ = self.basismodel((weights, tf.zeros_like(weights), phase))
         action = tf.squeeze(action)
 

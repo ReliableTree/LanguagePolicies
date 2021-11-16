@@ -601,6 +601,8 @@ class Simulator(object):
         elif d_in.startswith("t "):
             self.rm_voice = d_in[2:]
             self.cnt      = 0
+            print('robot state')
+            print(len(self._getRobotState()))
             print("Running Task: " + self.rm_voice)
         elif self.rm_voice != "" and  d_in == "":
             self.cnt += 1
