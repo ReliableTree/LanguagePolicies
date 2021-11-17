@@ -3,6 +3,7 @@ import sys
 import inspect
 
 import torch
+from torch._C import dtype
 import torch.nn as nn
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
@@ -14,8 +15,11 @@ import tensorflow as tf
 from main import DatasetRSS
 from model_src.feedbackcontroller import FeedbackController
 from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
-
 from model_src.attentionTorch import TopDownAttentionTorch
+from model_src.model import PolicyTranslationModel
+from model_src.modelTorch import PolicyTranslationModelTorch
+GLOVE_PATH      = "../GDrive/glove.6B.50d.txt"
+
 
 class analyzer():
     def __init__(self, path) -> None:
@@ -107,6 +111,42 @@ class tryFeedBackControllerTorch(nn.Module):
         print(phase_seq.shape)
         print(weights_seq.shape)
 
+class try_model():
+    def __init__(self) -> None:
+        self.modeltf   = PolicyTranslationModel(od_path="", glove_path=GLOVE_PATH)
+        self.modeltorch = PolicyTranslationModelTorch(od_path="", glove_path=GLOVE_PATH)
+        self.d_in_torch = (
+            tf.ones((16,5), dtype=tf.float32),
+            torch.ones((16,6,5), dtype=torch.float32),
+            torch.ones((16,350,7), dtype=torch.float32)
+            )
+
+        self.d_in_tf = (
+            tf.ones((16,5), dtype=tf.float32),
+            tf.ones((16,6,5), dtype=tf.float32),
+            tf.ones((16,350,7), dtype=tf.float32)
+            )
+
+    def call_model(self):
+        #generated, (atn, dmp_dt, phase, weights) = self.modeltf(self.d_in_tf)
+        #print('output model')
+        #print(generated.shape)
+        #print(atn.shape)
+        #print(dmp_dt.shape)
+        #rint(phase.shape)
+        #print(weights.shape)
+
+        generated, (atn, dmp_dt, phase, weights) = self.modeltorch(self.d_in_torch)
+        generated, (atn, dmp_dt, phase, weights) = self.modeltorch(self.d_in_torch)
+        
+        '''print('output model')
+        print(generated.shape)
+        print(atn.shape)
+        print(dmp_dt.shape)
+        print(phase.shape)
+        print(weights.shape)'''
+
+
 class try_Attention():
     def __init__(self):
         self.attention_model = TopDownAttentionTorch(units=64)
@@ -114,8 +154,8 @@ class try_Attention():
     def callAttention(self):
         language = torch.ones((16, 32))
         features = torch.ones(16,6,5)
-        self.attention_model.forward((language, features))
-
+        attn = self.attention_model.forward((language, features))
+        print(list(self.attention_model.parameters()))
 if __name__ == '__main__':
     #ana = analyzer(path = "../GDrive/train.tfrecord")
     #ana.show_first_entry()
@@ -123,5 +163,7 @@ if __name__ == '__main__':
     #tfc.call_controller()
     #tfc = tryFeedBackControllerTorch()
     #tfc.call_controller()
-    ta = try_Attention()
-    ta.callAttention()
+    #ta = try_Attention()
+    #ta.callAttention()
+    tm = try_model()
+    tm.call_model()

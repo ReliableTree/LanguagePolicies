@@ -93,6 +93,10 @@ class Network():
 
     def step(self, d_in, d_out, train):
         with tf.GradientTape() as tape:
+            print('inside step: din')
+            print(d_in[0].shape)
+            print(d_in[1].shape)
+            print(d_in[2].shape)
             result = self.model(d_in, training=train)
             loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
         if train:

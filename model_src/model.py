@@ -60,6 +60,8 @@ class PolicyTranslationModel(tf.keras.Model):
 
         language  = self.embedding(language)
         language  = self.lng_gru(inputs=language, training=training) 
+        print('language shape')
+        print(language.shape)
 
         # Calculate attention and expand it to match the feature size
         atn = self.attention((language, features))
@@ -85,13 +87,13 @@ class PolicyTranslationModel(tf.keras.Model):
             start_joints,
             tf.zeros(shape=[batch_size, self.units], dtype=tf.float32)
         ]
-        '''print('input to controller')
+        print('input to controller')
         print(robot.shape)
         print(cfeatures.shape)
         print(dmp_dt.shape)
         print(initial_state[0].shape)
         print(initial_state[1].shape)
-        print(training)'''
+        print(training)
         generated, phase, weights = self.controller(inputs=robot, constants=(cfeatures, dmp_dt), initial_state=initial_state, training=training)
 
         if return_cfeature:

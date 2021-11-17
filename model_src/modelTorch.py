@@ -3,117 +3,16 @@
 import tensorflow as tf
 import numpy as np
 import pathlib
+
+from torch._C import device
 from model_src.attention import TopDownAttention
+from model_src.attentionTorch import TopDownAttentionTorch
 from model_src.glove import GloveEmbeddings
 from model_src.feedbackcontroller import FeedbackController
+from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
 
 import torch
 import torch.nn as nn
-
-class PolicyTranslationModel(tf.keras.Model):
-    def __init__(self, od_path, glove_path, special=None):
-        super(PolicyTranslationModel, self).__init__(name="policy_translation")
-        self.units               = 32
-        self.output_dims         = 7
-        self.basis_functions     = 11
-
-
-        #leave as tf for now...
-        if od_path != "":                
-            od_path    = pathlib.Path(od_path)/"saved_model" 
-            self.frcnn = tf.saved_model.load(str(od_path))
-            self.frcnn = self.frcnn.signatures['serving_default']
-            self.frcnn.trainable = False
-
-        self.embedding = GloveEmbeddings(file_path=glove_path)
-        self.lng_gru   = tf.keras.layers.GRU(units=self.units)
-
-        self.attention = TopDownAttention(units=64)
-
-        self.dout      = tf.keras.layers.Dropout(rate=0.25)
-
-        # Units needs to be divisible by 7
-        self.pt_global = tf.keras.layers.Dense(units=42, activation=tf.keras.activations.relu)
-
-        self.pt_dt_1   = tf.keras.layers.Dense(units=self.units * 2, activation=tf.keras.activations.relu)
-        self.pt_dt_2   = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.hard_sigmoid)
-
-        self.controller = tf.keras.layers.RNN(
-            FeedbackController(
-                robot_state_size = self.units, 
-                rnn_state_size   = (tf.TensorShape([self.output_dims]), tf.TensorShape([self.units])),
-                dimensions       = self.output_dims, 
-                basis_functions  = self.basis_functions,
-                special          = None
-            ), 
-        return_sequences=True)
-           
-    @tf.function
-    def call(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False):
-        if training:
-            use_dropout = True
-
-        language   = inputs[0]
-        features   = inputs[1]
-        # local      = features[:,:,:5]
-        robot      = inputs[2]
-
-        # dmp_state  = inputs[3]
-        batch_size = tf.shape(language)[0]
-
-        language  = self.embedding(language)
-        language  = self.lng_gru(inputs=language, training=training) 
-
-        # Calculate attention and expand it to match the feature size
-        atn = self.attention((language, features))
-        atn_w = tf.expand_dims(atn, 2)
-        atn_w = tf.tile(atn_w, [1, 1, 5])
-        # Compress image features and apply attention
-        cfeatures = tf.math.multiply(atn_w, features)
-        cfeatures = tf.math.reduce_sum(cfeatures, axis=1)
-
-        # Add the language to the mix again. Possibly usefull to predict dt
-        start_joints  = robot[:,0,:]
-
-        cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
-
-        # Policy Translation: Create weight + goal for DMP
-        pt          = self.pt_global(cfeatures)
-        pt          = self.dout(pt, training=tf.convert_to_tensor(use_dropout))
-        dmp_dt      = self.pt_dt_2(self.pt_dt_1(pt)) + 0.1 # 0.1 prevents division by 0, just in case
-        # dmp_dt      = d_out[2]
-
-        # Run the low-level controller
-        initial_state = [
-            start_joints,
-            tf.zeros(shape=[batch_size, self.units], dtype=tf.float32)
-        ]
-        '''print('input to controller')
-        print(robot.shape)
-        print(cfeatures.shape)
-        print(dmp_dt.shape)
-        print(initial_state[0].shape)
-        print(initial_state[1].shape)
-        print(training)'''
-        generated, phase, weights = self.controller(inputs=robot, constants=(cfeatures, dmp_dt), initial_state=initial_state, training=training)
-
-        if return_cfeature:
-            return generated, (atn, dmp_dt, phase, weights, cfeatures)
-        else:
-            return generated, (atn, dmp_dt, phase, weights)
-    
-    def getVariables(self, step=None):
-        return self.trainable_variables
-    
-    def getVariablesFT(self):
-        variables = []
-        variables += self.pt_w_1.trainable_variables
-        variables += self.pt_w_2.trainable_variables
-        variables += self.pt_w_3.trainable_variables
-        return variables
-    
-    def saveModelToFile(self, add):
-        self.save_weights("Data/Model/" + add + "policy_translation")
 
 
 class PolicyTranslationModelTorch(nn.Module):
@@ -122,6 +21,7 @@ class PolicyTranslationModelTorch(nn.Module):
         self.units               = 32
         self.output_dims         = 7
         self.basis_functions     = 11
+        self.ptgloabl_units      = 42
 
         if od_path != "":                
             od_path    = pathlib.Path(od_path)/"saved_model" 
@@ -130,76 +30,115 @@ class PolicyTranslationModelTorch(nn.Module):
             self.frcnn.trainable = False
 
         self.embedding = GloveEmbeddings(file_path=glove_path)
-        self.lng_gru   = tf.keras.layers.GRU(units=self.units)
+        print(self.embedding)
+        self.lng_gru   = None
+        self.dmp_dt_model = None
 
-        self.attention = TopDownAttention(units=64)
+        self.attention = TopDownAttentionTorch(units=64)
 
-        self.dout      = tf.keras.layers.Dropout(rate=0.25)
+        self.dout      = nn.Dropout(p=0.25)
 
         # Units needs to be divisible by 7
-        self.pt_global = tf.keras.layers.Dense(units=42, activation=tf.keras.activations.relu)
 
-        self.pt_dt_1   = tf.keras.layers.Dense(units=self.units * 2, activation=tf.keras.activations.relu)
-        self.pt_dt_2   = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.hard_sigmoid)
+        self.controller = FeedBackControllerTorch(
+            robot_state_size=self.units,
+            dimensions=self.output_dims,
+            basis_functions=self.basis_functions,
+            cnfeatures_size=self.units + self.output_dims + 5
+        )
 
-        self.controller = tf.keras.layers.RNN(
-            FeedbackController(
-                robot_state_size = self.units, 
-                rnn_state_size   = (tf.TensorShape([self.output_dims]), tf.TensorShape([self.units])),
-                dimensions       = self.output_dims, 
-                basis_functions  = self.basis_functions,
-                special          = None
-            ), 
-        return_sequences=True)
-           
-    @tf.function
-    def call(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False):
+        self.last_language = None
+        self.language = None
+
+
+
+    def build_lang_gru(self, input):
+        self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True)
+
+
+    def build_dmp_dt_model(self, input, use_dropout):
+        layers = [
+            nn.Linear(input.size(-1), self.ptgloabl_units),
+            nn.ReLU()
+        ]
+        if use_dropout:
+            layers.append(nn.Dropout(p=0.25))
+        
+        layers += [
+            nn.Linear(self.ptgloabl_units, self.units * 2),
+            nn.ReLU(),
+            nn.Linear(self.units * 2, 1),
+            nn.Hardsigmoid()
+        ]
+
+        self.dmp_dt_model_seq = nn.Sequential(*layers)
+
+        def build_model(inpt):
+            dmp_dt = self.dmp_dt_model_seq(inpt)
+            return dmp_dt + 1
+
+        self.dmp_dt_model = build_model
+
+
+
+    def forward(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False):
         if training:
             use_dropout = True
 
-        language   = inputs[0]
+        language_in   = inputs[0]
+        if language_in is not self.last_language:
+            self.last_language = language_in
+            language  = self.embedding(language_in)
+            language = torch.tensor(language.numpy(), device=inputs[1].device)
+            if self.lng_gru is None:
+                self.build_lang_gru(language)
+            _, language  = self.lng_gru(language) 
+            self.language = language.squeeze()
+            print('language shape')
+            print(language.shape)
+            print('new language')
         features   = inputs[1]
         # local      = features[:,:,:5]
         robot      = inputs[2]
 
         # dmp_state  = inputs[3]
-        batch_size = tf.shape(language)[0]
 
-        language  = self.embedding(language)
-        language  = self.lng_gru(inputs=language, training=training) 
+
+        batch_size = language.size(0)
 
         # Calculate attention and expand it to match the feature size
-        atn = self.attention((language, features))
-        atn_w = tf.expand_dims(atn, 2)
-        atn_w = tf.tile(atn_w, [1, 1, 5])
+        atn = self.attention((self.language, features))
+        atn_w = atn.unsqueeze(2)
+        atn_w = atn_w.repeat([1,1,5])
         # Compress image features and apply attention
-        cfeatures = tf.math.multiply(atn_w, features)
-        cfeatures = tf.math.reduce_sum(cfeatures, axis=1)
+        cfeatures = torch.multiply(atn_w, features)
+        cfeatures = cfeatures.sum(axis=1)
 
         # Add the language to the mix again. Possibly usefull to predict dt
         start_joints  = robot[:,0,:]
 
-        cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
+        cfeatures = torch.cat((cfeatures, self.language, start_joints), axis=1)
+        #cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
 
         # Policy Translation: Create weight + goal for DMP
-        pt          = self.pt_global(cfeatures)
-        pt          = self.dout(pt, training=tf.convert_to_tensor(use_dropout))
-        dmp_dt      = self.pt_dt_2(self.pt_dt_1(pt)) + 0.1 # 0.1 prevents division by 0, just in case
-        # dmp_dt      = d_out[2]
+        if self.dmp_dt_model is None:
+            self.build_dmp_dt_model(cfeatures, use_dropout=use_dropout)
+
+        dmp_dt = self.dmp_dt_model(cfeatures)
 
         # Run the low-level controller
         initial_state = [
             start_joints,
-            tf.zeros(shape=[batch_size, self.units], dtype=tf.float32)
+            torch.zeros((batch_size, self.units), dtype=torch.float32)
         ]
-        '''print('input to controller')
+        print('input to controller')
         print(robot.shape)
         print(cfeatures.shape)
         print(dmp_dt.shape)
         print(initial_state[0].shape)
         print(initial_state[1].shape)
-        print(training)'''
-        generated, phase, weights = self.controller(inputs=robot, constants=(cfeatures, dmp_dt), initial_state=initial_state, training=training)
+        print(training)
+        generated, phase, weights = self.controller.forward(seq_inputs=robot, states=initial_state, constants=(cfeatures, dmp_dt), training=training)
 
         if return_cfeature:
             return generated, (atn, dmp_dt, phase, weights, cfeatures)

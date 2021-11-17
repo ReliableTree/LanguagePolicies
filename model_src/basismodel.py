@@ -16,17 +16,10 @@ class BasisModel(tf.keras.layers.Layer):
     @tf.function
     def call(self, inputs, training=None):
         weights     = tf.transpose(inputs[0], perm=[0,2,1])
-        print('input shapes')
-        print(inputs[0].shape)
-        print(weights.shape)
         weights_std = inputs[1]
         positions   = inputs[2]
-        print('positions')
-        print(positions.shape)
         basis_funcs = self.compute_basis_values(positions)
-        print(basis_funcs.shape)
         result      = tf.linalg.matmul(basis_funcs, weights)
-        print(result.shape)
         return result, tf.zeros_like(result)
 
     #def get_config(self):
