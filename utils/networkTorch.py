@@ -5,18 +5,23 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import sys
 import numpy as np
-from utils.graphs import TBoardGraphs
-import shutil
-import pycurl
-import pickle
-import os
+from utils.graphsTorch import TBoardGraphsTorch
+from utils.network import Network
+import tensorflow as tf
 
-class Network():
-    def __init__(self, model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25):
-        self.optimizer         = tf.keras.optimizers.Adam(learning_rate=lr, beta_1=0.9, beta_2=0.999)
+import torch
+import torch.nn as nn
+import time
+
+class NetworkTorch(nn.Module):
+    def __init__(self, model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25, gamma_sl = 0.98):
+        super().__init__()
+        self.tf_test_nw = Network(model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25)
+        self.optimizer         = None
         self.model             = model
         self.total_steps       = 0
         self.logname           = logname
+        self.lr = lr
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -24,9 +29,9 @@ class Network():
         else:
             self.instance_name = None
 
-        self.tboard            = TBoardGraphs(self.logname)
-        self.loss              = tf.keras.losses.CategoricalCrossentropy()
-        self.global_best_loss  = 10000
+        self.tboard            = TBoardGraphsTorch(self.logname)
+        self.loss              = nn.CrossEntropyLoss()
+        self.global_best_loss  = float('inf')
         self.last_written_step = -1
         self.log_freq          = log_freq
 
@@ -36,9 +41,19 @@ class Network():
         self.lw_dt  = lw_dt
         self.lw_phs = lw_phs
 
-    def setDatasets(self, train, validate):
-        self.train_ds = train.ds
-        self.val_ds   = validate.ds
+        self.mse_loss = nn.MSELoss()
+        self.ce_loss = nn.CrossEntropyLoss()
+        self.gamma_sl = gamma_sl
+
+    def setup_model(self):
+        with torch.no_grad():
+            for step, (d_in, d_out) in enumerate(self.train_ds):
+                result = self.model(d_in, training=True)
+                break
+
+    def setDatasets(self, train_loader, val_loader):
+        self.train_ds = train_loader
+        self.val_ds   = val_loader
 
     def train(self, epochs):
         self.global_step = 0
@@ -55,9 +70,13 @@ class Network():
                     self.total_steps += 1
                 self.global_step += 1
             self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
-            self.runValidation(quick=False)
 
-            self.model.saveModelToFile(self.logname + "/")
+            self.runValidation(quick=False)
+            self.scheduler.step()
+            print(f'learning rate: {self.scheduler.get_last_lr()[0]}')
+
+            #TODO
+            #self.model.saveModelToFile(self.logname + "/")
 
             if epoch % self.log_freq == 0 and self.instance_name is not None:
                 self._uploadToCloud(epoch)
@@ -65,13 +84,6 @@ class Network():
         if self.instance_name is not None:
             self._uploadToCloud()
     
-    def _uploadToCloud(self, epoch=None):
-        # Not available in public version
-        pass
-
-    def _curlUpload(self, path):
-        # Not available in public version
-        pass
     
     def runValidation(self, quick=False, pnt=True): 
         if not quick:
@@ -81,27 +93,48 @@ class Network():
             val_loss.append(self.step(d_in, d_out, train=False))
             if quick:
                 break
-        d_in_graphs  = (tf.tile(tf.expand_dims(d_in[0][0], 0),[50,1]), tf.tile(tf.expand_dims(d_in[1][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_in[2][0], 0),[50,1,1]))
+        #TODO
+        '''d_in_graphs  = (tf.tile(tf.expand_dims(d_in[0][0], 0),[50,1]), tf.tile(tf.expand_dims(d_in[1][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_in[2][0], 0),[50,1,1]))
         d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
                         tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
         self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
                           (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                          self.model(d_in_graphs, training=True, use_dropout=True))
+                          self.model(d_in_graphs, training=True, use_dropout=True))'''
         if pnt:
             print("  Validation Loss: {:.6f}".format(np.mean(val_loss)))
         return np.mean(val_loss)
 
     def step(self, d_in, d_out, train):
-        with tf.GradientTape() as tape:
-            # # print('inside step: din')
-            # # print(d_in[0].shape)
-            # # print(d_in[1].shape)
-            # # print(d_in[2].shape)
-            result = self.model(d_in, training=train)
-            loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
+        '''print('inside step: din')
+        print(d_in[0].shape)
+        print(d_in[1].shape)
+        print(d_in[2].shape)'''
+        result = self.model(d_in, training=train)
+        #tf_dout = [tf.convert_to_tensor(inpt.detach().cpu().numpy()) for inpt in d_out]
+        #tf_result = [[tf.convert_to_tensor(inpt.detach().cpu().numpy()) for inpt in result_tp] for result_tp in result]
+        #print(f'transformed result: {tf_result[0]}')
+        #tf_loss, _ = self.tf_test_nw.calculateLoss(tf_dout, tf_result, train)
+        #print(f'tf loss: {tf_loss} and dtype: {tf_loss.dtype}')
+        loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
+
+        #print(f'torch loss: {loss} and dtype: {loss.dtype}')
+
         if train:
-            gradients = tape.gradient(loss, self.model.getVariables(self.global_step))
-            self.optimizer.apply_gradients(zip(gradients, self.model.getVariables(self.global_step)))
+            if not self.optimizer:
+                self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999)) 
+                self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 1.0, gamma=self.gamma_sl)
+            #print(f'num parametrs in model: {len(list(self.model.parameters()))}')
+
+            self.optimizer.zero_grad()
+            h = time.perf_counter()
+
+            loss.backward()
+
+            '''for i, para in enumerate(list(self.model.parameters())):
+                print(f'para num {i} has grad sum {para.grad.detach().sum()}')'''
+            #print(f'gradient: {list(self.model.parameters())[0].grad}')
+            self.optimizer.step()
+
             self.tboard.addTrainScalar("Loss", loss, self.global_step)
             self.tboard.addTrainScalar("Loss Attention", atn, self.global_step)
             self.tboard.addTrainScalar("Loss Trajectory", trj, self.global_step)
@@ -119,9 +152,9 @@ class Network():
                 self.tboard.addValidationScalar("Loss Delta T", dt, self.global_step)
                 if loss < self.global_best_loss:
                     self.global_best_loss = loss
-                    self.model.saveModelToFile(self.logname + "/best/")
+                    #self.model.saveModelToFile(self.logname + "/best/")
 
-        return loss.numpy()
+        return loss.detach().cpu().numpy()
     
     def interpolateTrajectory(self, trj, target):
         batch_size     = trj.shape[0]
@@ -136,30 +169,40 @@ class Network():
         return result
 
     def calculateMSEWithPaddingMask(self, y_true, y_pred, mask):
-        mse = tf.math.pow(y_true - y_pred, 2.0)
-        mse = tf.math.multiply(mse, mask)
-        n   = mse.shape[-1]
-        mse = (1.0 / n) * tf.reduce_sum(mse, axis=-1)
-        return mse
+        mse = (y_true - y_pred)**2
+        mse = mse * mask
+        return mse.mean(-1)
+
+    def catCrossEntrLoss(self, y_labels, y_preds):
+        y_labels_args = torch.argmax(y_labels, dim = -1)
+
+        return self.ce_loss(y_preds, y_labels_args)
 
     def calculateLoss(self, d_out, result, train):
         gen_trj, (atn, dmp_dt, phs, wght)                       = result
         generated, attention, delta_t, weights, phase, loss_atn = d_out
 
-        weight_dim  = [3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1]
+        weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
         
-        atn_loss = self.loss(y_true=attention, y_pred=atn)
-        dt_loss  = tf.math.reduce_mean(tf.keras.metrics.mean_squared_error(delta_t, dmp_dt[:,0]))
-        trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, tf.tile([[weight_dim]], [16, 350, 1]))
+        atn_loss = self.catCrossEntrLoss(attention, atn)
+        #print(f'atn_loss: {atn_loss}')
 
-        trj_loss = tf.reduce_mean(tf.math.multiply(trj_loss, loss_atn), axis=1)
-        trj_loss = tf.reduce_mean(trj_loss)
-        phs_loss = tf.math.reduce_mean(self.calculateMSEWithPaddingMask(phase, phs[:,:,0], loss_atn))
+        dt_loss = self.mse_loss(delta_t, dmp_dt[:,0]).mean()
+        #print(f'dt_loss: {dt_loss}')
 
-        weight_loss = tf.math.reduce_mean(tf.keras.metrics.mean_squared_error(wght[:,:-1,:,:], tf.roll(wght, shift=-1, axis=1)[:,:-1,:,:]), axis=-1)
-
-        weight_loss = tf.math.reduce_mean(tf.math.multiply(weight_loss, loss_atn[:,:-1]))
-
+        repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
+        trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim)
+        trj_loss = (trj_loss * loss_atn).mean()
+        #print(f'trj_loss: {trj_loss}')
+   
+        phs_loss = self.calculateMSEWithPaddingMask(phase, phs[:,:,0], loss_atn).mean()
+        #print(f'phs_loss: {phs_loss}')
+        #TODO why :-1?'''
+        weight_loss = nn.MSELoss(reduction='none')(wght[:,:-1,:,:], wght[:,:-1,:,:].roll(shifts = -1, dims = 1)).mean((-2,-1))
+        '''print('weight loss')
+        print(weight_loss.shape)'''
+        weight_loss = (weight_loss * loss_atn[:,:-1]).mean()
+        #print(f'weight_loss: {weight_loss}')
         return (atn_loss * self.lw_atn +
                 trj_loss * self.lw_trj +
                 phs_loss * self.lw_phs +

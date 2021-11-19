@@ -4,7 +4,7 @@ import tensorflow as tf
 import numpy as np
 import pathlib
 
-from torch._C import device
+from torch._C import device, dtype
 from model_src.attention import TopDownAttention
 from model_src.attentionTorch import TopDownAttentionTorch
 from model_src.glove import GloveEmbeddings
@@ -13,7 +13,7 @@ from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
 
 import torch
 import torch.nn as nn
-
+import time
 
 class PolicyTranslationModelTorch(nn.Module):
     def __init__(self, od_path, glove_path):
@@ -52,8 +52,8 @@ class PolicyTranslationModelTorch(nn.Module):
 
 
 
-    def build_lang_gru(self, input):
-        self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True)
+    def build_lang_gru(self, input, bias = False):
+        self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
 
 
     def build_dmp_dt_model(self, input, use_dropout):
@@ -71,11 +71,11 @@ class PolicyTranslationModelTorch(nn.Module):
             nn.Hardsigmoid()
         ]
 
-        self.dmp_dt_model_seq = nn.Sequential(*layers)
+        self.dmp_dt_model_seq = nn.Sequential(*layers).to(input.device)
 
         def build_model(inpt):
             dmp_dt = self.dmp_dt_model_seq(inpt)
-            return dmp_dt + 1
+            return dmp_dt + 0.1
 
         self.dmp_dt_model = build_model
 
@@ -88,15 +88,14 @@ class PolicyTranslationModelTorch(nn.Module):
         language_in   = inputs[0]
         if language_in is not self.last_language:
             self.last_language = language_in
-            language  = self.embedding(language_in)
+
+            language_in_tf = tf.convert_to_tensor(language_in.cpu().numpy())
+            language  = self.embedding(language_in_tf)
             language = torch.tensor(language.numpy(), device=inputs[1].device)
             if self.lng_gru is None:
                 self.build_lang_gru(language)
             _, language  = self.lng_gru(language) 
             self.language = language.squeeze()
-            print('language shape')
-            print(language.shape)
-            print('new language')
         features   = inputs[1]
         # local      = features[:,:,:5]
         robot      = inputs[2]
@@ -104,7 +103,7 @@ class PolicyTranslationModelTorch(nn.Module):
         # dmp_state  = inputs[3]
 
 
-        batch_size = language.size(0)
+        batch_size = robot.size(0)
 
         # Calculate attention and expand it to match the feature size
         atn = self.attention((self.language, features))
@@ -129,16 +128,17 @@ class PolicyTranslationModelTorch(nn.Module):
         # Run the low-level controller
         initial_state = [
             start_joints,
-            torch.zeros((batch_size, self.units), dtype=torch.float32)
+            torch.zeros((batch_size, self.units), dtype=torch.float32, device=dmp_dt.device)
         ]
-        print('input to controller')
-        print(robot.shape)
-        print(cfeatures.shape)
-        print(dmp_dt.shape)
-        print(initial_state[0].shape)
-        print(initial_state[1].shape)
-        print(training)
         generated, phase, weights = self.controller.forward(seq_inputs=robot, states=initial_state, constants=(cfeatures, dmp_dt), training=training)
+
+        '''print('number of parameters')
+        print(f'lng gru: {len(list(self.lng_gru.parameters()))}')
+
+        print(f'attention: {len(list(self.attention.parameters()))}')
+        print(f'phase model: {len(list(self.dmp_dt_model_seq.parameters()))}')
+        print(f'controller: {len(list(self.controller.parameters()))}')
+        print(f'overall {len(list(self.parameters()))}')'''
 
         if return_cfeature:
             return generated, (atn, dmp_dt, phase, weights, cfeatures)
@@ -146,7 +146,7 @@ class PolicyTranslationModelTorch(nn.Module):
             return generated, (atn, dmp_dt, phase, weights)
     
     def getVariables(self, step=None):
-        return self.trainable_variables
+        return self.parameters()
     
     def getVariablesFT(self):
         variables = []

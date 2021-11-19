@@ -14,14 +14,14 @@ class TopDownAttentionTorch(nn.Module):
         self.w1 = nn.Sequential(
             nn.Linear(input.size(-1), self.units),
             nn.Tanh()
-        )
+        ).to(input.device)
 
         self.w2 = nn.Sequential(
             nn.Linear(self.units, self.units),
             nn.Sigmoid()
-        )
+        ).to(input.device)
 
-        self.wt = nn.Linear(self.units, 1, bias=False)
+        self.wt = nn.Linear(self.units, 1, bias=False).to(input.device)
 
         self.softmax = nn.Softmax(-1)
 

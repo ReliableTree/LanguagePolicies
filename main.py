@@ -40,7 +40,7 @@ TRAIN_EPOCHS    = 200
 
 
 class DatasetRSS():
-    def __init__(self, record_path):
+    def __init__(self, record_path, batch_size = 16):
         self.feature_descriptor = {
             "language/tokens":          tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
             "image/features":           tf.io.FixedLenSequenceFeature([], tf.float32, allow_missing=True),
@@ -56,8 +56,8 @@ class DatasetRSS():
 
         self.ds = tf.data.TFRecordDataset(record_path)
         self.ds = self.ds.map(self._parseFeatureDescriptor)
-        self.ds = self.ds.shuffle(buffer_size=500)
-        self.ds = self.ds.batch(16, drop_remainder=True)
+        #self.ds = self.ds.shuffle(buffer_size=500)
+        self.ds = self.ds.batch(batch_size, drop_remainder=True)
 
     def _parseFeatureDescriptor(self, proto):
         features   = tf.io.parse_single_example(proto, self.feature_descriptor)

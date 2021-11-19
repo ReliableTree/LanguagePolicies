@@ -1,5 +1,6 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
+from os import times
 import tensorflow as tf
 import numpy as np
 import pathlib
@@ -8,6 +9,7 @@ from model_src.glove import GloveEmbeddings
 from model_src.dmp import DynamicMovementPrimitive
 from model_src.basismodel import BasisModel
 from model_src.feedbackcontroller import FeedbackController
+import time
 
 class PolicyTranslationModel(tf.keras.Model):
     def __init__(self, od_path, glove_path, special=None):
@@ -60,8 +62,8 @@ class PolicyTranslationModel(tf.keras.Model):
 
         language  = self.embedding(language)
         language  = self.lng_gru(inputs=language, training=training) 
-        print('language shape')
-        print(language.shape)
+        '''print('language shape')
+        print(language.shape)'''
 
         # Calculate attention and expand it to match the feature size
         atn = self.attention((language, features))
@@ -87,14 +89,26 @@ class PolicyTranslationModel(tf.keras.Model):
             start_joints,
             tf.zeros(shape=[batch_size, self.units], dtype=tf.float32)
         ]
-        print('input to controller')
+        '''print('input to controller')
         print(robot.shape)
         print(cfeatures.shape)
         print(dmp_dt.shape)
         print(initial_state[0].shape)
         print(initial_state[1].shape)
-        print(training)
+        print(training)'''
+        h = time.perf_counter()
         generated, phase, weights = self.controller(inputs=robot, constants=(cfeatures, dmp_dt), initial_state=initial_state, training=training)
+        print(f'time for controller call: {time.perf_counter() - h}')
+        '''print('number of parameters')
+        print(f'lng gru: {len(list(self.lng_gru.trainable_variables))}')
+
+        print(f'attention: {len(list(self.attention.trainable_variables))}')
+        print(f'dout: {len(list(self.dout.trainable_variables))}')
+        print(f'ptdt1: {len(list(self.pt_dt_1.trainable_variables))}')
+        print(f'ptdt2: {len(list(self.pt_dt_2.trainable_variables))}')
+        print(f'ptdtglobal: {len(list(self.pt_global.trainable_variables))}')
+        print(f'controller: {len(list(self.controller.trainable_variables))}')'''
+
 
         if return_cfeature:
             return generated, (atn, dmp_dt, phase, weights, cfeatures)

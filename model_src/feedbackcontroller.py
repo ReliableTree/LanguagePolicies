@@ -34,6 +34,7 @@ class FeedbackController(tf.keras.layers.Layer):
         
         # Robot GRU:
         in_robot           = tf.cond(tf.convert_to_tensor(training), lambda: st_robot_last, lambda: in_robot)
+        print(f'training: {training}')
         e_robot, gru_state = self.robot_gru(inputs=in_robot, states=[st_gru_last])
 
         # Internal state:

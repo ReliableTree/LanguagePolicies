@@ -5,6 +5,7 @@ from model_src.basismodel import BasisModel
 
 import torch
 import torch.nn as nn
+import time
 
 class FeedBackControllerCellTorch(nn.Module):
     def __init__(self, robot_state_size, dimensions, basis_functions, cnfeatures_size = 5):
@@ -14,7 +15,7 @@ class FeedBackControllerCellTorch(nn.Module):
         self.n_bfuncs         = basis_functions
         self.x_shape = robot_state_size + cnfeatures_size
 
-        self.robot_gru = nn.GRUCell(input_size=self.dims, hidden_size=self.robot_state_size)
+        self.robot_gru = nn.GRUCell(input_size=self.dims, hidden_size=self.robot_state_size, bias= False)
 
         self.weight_model = nn.Sequential(
             nn.Linear(self.x_shape, self.dims * self.n_bfuncs),
@@ -47,12 +48,14 @@ class FeedBackControllerCellTorch(nn.Module):
         if training:
             in_robot = st_robot_last
 
+        #h = time.perf_counter()
         gru_output = self.robot_gru(in_robot, st_gru_last)
-
+        #print(f'time for one cell call: {time.perf_counter() - h}')
         # Internal state:
         x = torch.cat((cn_features, gru_output), axis=1)
 
         # Use x to calcate the weights:
+
         weights = self.weight_model(x).reshape([-1, self.dims, self.n_bfuncs])
 
         # Phase estimation, based on x:
@@ -79,14 +82,14 @@ class FeedBackControllerTorch(nn.Module):
         initilaized = False
         for event in range(int(seq_inputs.size(1))):
             (action, phase, weights), gru_output = self.Cell.forward(inputs=seq_inputs[:,event,:], states=states, constants=constants, training=training)
+            states = (action, gru_output)
             if not initilaized:
                 actions_seq = torch.zeros_like(seq_inputs)
                 phase_seq = torch.zeros([seq_inputs.size(0), seq_inputs.size(1), 1], device = seq_inputs.device, dtype=seq_inputs.dtype)
                 weights_seq = torch.zeros([seq_inputs.size(0), seq_inputs.size(1), weights.size(1), weights.size(2)], device = seq_inputs.device, dtype=seq_inputs.dtype)
-            
+                initilaized = True
+                
             actions_seq[:,event,:] = action
             phase_seq[:,event,:] = phase
             weights_seq[:,event,:] = weights
-            states = (action, gru_output)
-
         return actions_seq, phase_seq, weights_seq
