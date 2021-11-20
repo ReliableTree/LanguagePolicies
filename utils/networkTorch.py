@@ -76,7 +76,7 @@ class NetworkTorch(nn.Module):
             print(f'learning rate: {self.scheduler.get_last_lr()[0]}')
 
             #TODO
-            #self.model.saveModelToFile(self.logname + "/")
+            self.model.saveModelToFile(self.logname + "/")
 
             if epoch % self.log_freq == 0 and self.instance_name is not None:
                 self._uploadToCloud(epoch)
@@ -150,9 +150,11 @@ class NetworkTorch(nn.Module):
                 self.tboard.addValidationScalar("Loss Phase", phs, self.global_step)
                 self.tboard.addValidationScalar("Loss Weight", wght, self.global_step)
                 self.tboard.addValidationScalar("Loss Delta T", dt, self.global_step)
+                loss = loss.detach().cpu()
                 if loss < self.global_best_loss:
                     self.global_best_loss = loss
-                    #self.model.saveModelToFile(self.logname + "/best/")
+                    self.model.saveModelToFile(self.logname + "/best/")
+                    print(f'model saved with loss: {loss}')
 
         return loss.detach().cpu().numpy()
     

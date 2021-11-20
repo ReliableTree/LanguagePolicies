@@ -58,7 +58,7 @@ def init_weights(network):
         else:
             print(para)
 
-def setupModel(device = 'cuda', batch_size = 1000):
+def setupModel(device = 'cuda', batch_size = 100):
     print("  --> Running with default settings")
     model   = PolicyTranslationModelTorch(od_path="", glove_path=GLOVE_PATH, use_LSTM=True).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)

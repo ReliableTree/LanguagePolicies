@@ -14,6 +14,8 @@ import torch
 import torch.nn as nn
 import time
 
+from os import path, makedirs
+
 class PolicyTranslationModelTorch(nn.Module):
     def __init__(self, od_path, glove_path, use_LSTM = False):
         super().__init__()
@@ -160,4 +162,9 @@ class PolicyTranslationModelTorch(nn.Module):
         return variables
     
     def saveModelToFile(self, add):
-        self.save_weights("Data/Model/" + add + "policy_translation")
+        dir_path = path.dirname(path.realpath(__file__))
+        path_to_file = dir_path + "/Data/Model/" + add
+        if not path.exists(path_to_file):
+            makedirs(path_to_file)
+        print(f'path to file: {path_to_file}')
+        torch.save(self.state_dict(), path_to_file + "policy_translation")
