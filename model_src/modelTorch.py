@@ -8,7 +8,6 @@ from torch._C import device, dtype
 from model_src.attention import TopDownAttention
 from model_src.attentionTorch import TopDownAttentionTorch
 from model_src.glove import GloveEmbeddings
-from model_src.feedbackcontroller import FeedbackController
 from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
 
 import torch
@@ -16,9 +15,9 @@ import torch.nn as nn
 import time
 
 class PolicyTranslationModelTorch(nn.Module):
-    def __init__(self, od_path, glove_path):
+    def __init__(self, od_path, glove_path, use_LSTM = False):
         super().__init__()
-        self.units               = 32
+        self.units               = 300
         self.output_dims         = 7
         self.basis_functions     = 11
         self.ptgloabl_units      = 42
@@ -44,7 +43,8 @@ class PolicyTranslationModelTorch(nn.Module):
             robot_state_size=self.units,
             dimensions=self.output_dims,
             basis_functions=self.basis_functions,
-            cnfeatures_size=self.units + self.output_dims + 5
+            cnfeatures_size=self.units + self.output_dims + 5,
+            use_LSTM = use_LSTM
         )
 
         self.last_language = None
@@ -127,7 +127,8 @@ class PolicyTranslationModelTorch(nn.Module):
         if (len(inputs) > 3) and (inputs[3] is not None): #inputs includes Last_GRU_State
             last_gru_state = inputs[3]
         else:
-            last_gru_state = torch.zeros((batch_size, self.units), dtype=torch.float32, device=dmp_dt.device)
+            #last_gru_state = torch.zeros((batch_size, self.units), dtype=torch.float32, device=dmp_dt.device)
+            last_gru_state = None
 
         # Run the low-level controller
         initial_state = [

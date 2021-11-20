@@ -8,14 +8,17 @@ import torch.nn as nn
 import time
 
 class FeedBackControllerCellTorch(nn.Module):
-    def __init__(self, robot_state_size, dimensions, basis_functions, cnfeatures_size = 5, bias = True):
+    def __init__(self, robot_state_size, dimensions, basis_functions, cnfeatures_size = 5, bias = True, use_LSTM = False):
         super().__init__()
         self.robot_state_size = robot_state_size
         self.dims             = dimensions
         self.n_bfuncs         = basis_functions
         self.x_shape = robot_state_size + cnfeatures_size
 
-        self.robot_gru = nn.GRUCell(input_size=self.dims, hidden_size=self.robot_state_size, bias= bias)
+        if not use_LSTM:
+            self.robot_gru = nn.GRUCell(input_size=self.dims, hidden_size=self.robot_state_size, bias= bias)
+        else:
+            self.robot_gru = nn.LSTMCell(input_size=self.dims, hidden_size=self.robot_state_size, bias= bias)
 
         self.kin_model = nn.Sequential(
             nn.Linear(self.x_shape, self.dims * self.n_bfuncs),
@@ -49,10 +52,16 @@ class FeedBackControllerCellTorch(nn.Module):
             in_robot = st_robot_last
 
         #h = time.perf_counter()
-        gru_output = self.robot_gru(in_robot, st_gru_last)
+        if st_robot_last is not None:
+            gru_output = self.robot_gru(in_robot, st_gru_last)
+        else:
+            gru_output = self.robot_gru(in_robot)
         #print(f'time for one cell call: {time.perf_counter() - h}')
         # Internal state:
-        x = torch.cat((cn_features, gru_output), axis=1)
+        if len(gru_output) == 2:
+            x = torch.cat((cn_features, gru_output[0]), axis=1)
+        else:
+            x = torch.cat((cn_features, gru_output), axis=1)
 
         # Use x to calcate the weights:
 

@@ -52,7 +52,7 @@ def init_weights(network):
     for para in nw_statedict:
         print(para)
         if 'bias' in para:
-            nw_statedict[para].data.fill_(1e-4)
+            nw_statedict[para].data.fill_(0)
         elif 'weight' in para:
             torch.nn.init.orthogonal_(nw_statedict[para])
         else:
@@ -60,7 +60,7 @@ def init_weights(network):
 
 def setupModel(device = 'cuda', batch_size = 1000):
     print("  --> Running with default settings")
-    model   = PolicyTranslationModelTorch(od_path="", glove_path=GLOVE_PATH).to(device)
+    model   = PolicyTranslationModelTorch(od_path="", glove_path=GLOVE_PATH, use_LSTM=True).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 

@@ -14,7 +14,7 @@ import torch.nn as nn
 import time
 
 class NetworkTorch(nn.Module):
-    def __init__(self, model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25, gamma_sl = 0.98):
+    def __init__(self, model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25, gamma_sl = 0.995):
         super().__init__()
         self.tf_test_nw = Network(model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25)
         self.optimizer         = None
