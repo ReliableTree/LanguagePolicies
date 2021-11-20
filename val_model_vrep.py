@@ -612,7 +612,7 @@ class Simulator(object):
             self._setJointVelocityFromTarget(r_state)
             self._maybeDropBall(r_state)
 
-            if phase >=0.95:
+            if phase >=0.92:
                 self.node.get_logger().info("Finished running trajectory with " + str(self.cnt) + " steps")
                 self._stopRobotMovement()
                 self.rm_voice = ""

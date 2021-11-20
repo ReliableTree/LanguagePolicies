@@ -62,6 +62,7 @@ class PolicyTranslationModel(tf.keras.Model):
 
         language  = self.embedding(language)
         language  = self.lng_gru(inputs=language, training=training) 
+        print(f'num paras in language gru: {len(list(self.lng_gru.trainable_variables))}')
         '''print('language shape')
         print(language.shape)'''
 

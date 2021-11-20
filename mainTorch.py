@@ -14,6 +14,7 @@ import hashids
 import time
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 from utils.convertTFDataToPytorchData import TorchDataset
 
@@ -21,7 +22,7 @@ TRAIN_DATA_TORCH = '../TorchDataset/train_data_torch.txt'
 
 VAL_DATA_TORCH = '../TorchDataset/val_data_torch.txt'
 
-MODEL_PATH = '../TorchDataset/test_cuda_model.pth'
+MODEL_PATH = '../TorchDataset/test_init_model.pth'
 
 
 # Location of the training data
@@ -46,6 +47,16 @@ WEIGHT_PHS      = 1.0
 TRAIN_EPOCHS    = 100
 
 #torch.set_default_dtype(torch.float64)
+def init_weights(network):
+    nw_statedict = network.state_dict()
+    for para in nw_statedict:
+        print(para)
+        if 'bias' in para:
+            nw_statedict[para].data.fill_(1e-4)
+        elif 'weight' in para:
+            torch.nn.init.orthogonal_(nw_statedict[para])
+        else:
+            print(para)
 
 def setupModel(device = 'cuda', batch_size = 1000):
     print("  --> Running with default settings")
@@ -59,7 +70,11 @@ def setupModel(device = 'cuda', batch_size = 1000):
     network = NetworkTorch(model, logname=LOGNAME, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
     network.setup_model()
-    network.load_state_dict(torch.load(MODEL_PATH), strict=True)
+    i = 0
+    init_weights(network)
+
+    print(f'number of param,eters in net: {len(list(network.parameters()))} and number of applied: {i}')
+    #network.load_state_dict(torch.load(MODEL_PATH), strict=True)
     network.train(epochs=TRAIN_EPOCHS)
     return network
 

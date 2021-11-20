@@ -5,9 +5,11 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import sys
+
+from torch._C import dtype
 import rclpy
 from policy_translation.srv import NetworkPT, TuneNetwork
-from model_src.model import PolicyTranslationModel
+from model_src.modelTorch import PolicyTranslationModelTorch
 from utils.network import Network
 from utils.tf_util import trainOnCPU, limitGPUMemory
 from utils.intprim.gaussian_model import GaussianModel
@@ -19,18 +21,16 @@ from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import matplotlib.pyplot as plt
 from utils.intprim.gaussian_model import GaussianModel
-import glob
-import json
 import pickle
-import copy
-
-
+import torch
+import torch.nn as nn
+import time
 # Force TensorFlow to use the CPU
 FORCE_CPU    = True
 # Use dropout at run-time for stochastif-forward passes
 USE_DROPOUT  = True
 # Where can we find the trained model?
-MODEL_PATH   = "../GDrive/model/policy_translation"
+MODEL_PATH   = '../TorchDataset/test_cuda_model.pth'
 # Where is a pre-trained faster-rcnn?
 FRCNN_PATH   = "../GDrive/rcnn"
 # Where are the GloVe word embeddings?
@@ -38,36 +38,72 @@ GLOVE_PATH   = "../GDrive/glove.6B.50d.txt"
 # Where is the normalization of the dataset?
 NORM_PATH    = "../GDrive/normalization_v2.pkl"
 
+
+# Location of the training data
+TRAIN_DATA      = "../GDrive/train.tfrecord"
+# Location of the validation data
+VALIDATION_DATA = "../GDrive/validate.tfrecord"
+# Location of the GloVe word embeddings
+GLOVE_PATH      = "../GDrive/glove.6B.50d.txt"
+# Learning rate for the adam optimizer
+LEARNING_RATE   = 1e-4
+# Weight for the attention loss
+WEIGHT_ATTN     = 1.0
+# Weight for the motion primitive weight loss
+WEIGHT_W        = 50.0
+# Weight for the trajectroy generation loss
+WEIGHT_TRJ      = 5.0
+# Weight for the time progression loss
+WEIGHT_DT       = 14.0
+# Weight for the phase prediction loss
+WEIGHT_PHS      = 1.0
+# Number of epochs to train
+TRAIN_EPOCHS    = 100
+
+TRAIN_DATA_TORCH = '../TorchDataset/train_data_torch.txt'
+
+VAL_DATA_TORCH = '../TorchDataset/val_data_torch.txt'
+
+MODEL_PATH = '../TorchDataset/test_cuda_model.pth'
+
+from torch.utils.data import DataLoader
+from utils.convertTFDataToPytorchData import TorchDataset
+from utils.networkTorch import NetworkTorch
+DEVICE = 'cpu'
+
 if FORCE_CPU:
     trainOnCPU()
 else:
     limitGPUMemory()
 
-print("Running Policy Translation Model")
-model = PolicyTranslationModel(
-    od_path=FRCNN_PATH,
-    glove_path=GLOVE_PATH,
-    special=None 
-)
+# should not use network.savedict.....
+def setup_model(device = 'cpu', batch_size = 1000):
+    model   = PolicyTranslationModelTorch(od_path=FRCNN_PATH, glove_path=GLOVE_PATH).to(device)
+    train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
-bs = 2
-model((
-    np.ones((bs, 15), dtype=np.int64),
-    np.ones((bs, 6, 5), dtype=np.float32),
-    np.ones((bs, 500, 7), dtype=np.float32)
-))
-model.summary()
+
+    eval_data = TorchDataset(path = VAL_DATA_TORCH, device=device)
+    eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
+    network = NetworkTorch(model, logname='LOGNAME', lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
+    network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
+    network.setup_model()
+    network.load_state_dict(torch.load(MODEL_PATH), strict=True)
+    return model
 
 class NetworkService():
-    def __init__(self):
+    def __init__(self, model, device = 'cpu'):
         self.dictionary    = self._loadDictionary(GLOVE_PATH)
         self.regex         = re.compile('[^a-z ]')
         self.bridge        = CvBridge()
         self.history       = []
         rclpy.init(args=None)
+        self.model = model
+        self.device = device
         self.node = rclpy.create_node("neural_network")
         self.service_nn = self.node.create_service(NetworkPT,   "/network",      self.cbk_network_dmp_ros2)
         self.normalization = pickle.load(open(NORM_PATH, mode="rb"), encoding="latin1")
+        self.last_GRU_state = None
         print("Ready")
 
     def runNode(self):
@@ -169,10 +205,8 @@ class NetworkService():
             language = self.tokenize(req.language)
             self.language = language + [0] * (15-len(language))
 
-            print('image features')
-            print(image.shape)
-            image_features = model.frcnn(tf.convert_to_tensor([image], dtype=tf.uint8))
-            print(image_features["detection_scores"].shape)
+            image_features = self.model.frcnn(tf.convert_to_tensor([image], dtype=tf.uint8))
+            #print(image_features["detection_scores"].shape)
             scores   = image_features["detection_scores"][0, :6].numpy().astype(dtype=np.float32)
             scores   = [0.0 if v < 0.5 else 1.0 for v in scores.tolist()]
 
@@ -183,26 +217,32 @@ class NetworkService():
             
             self.features = np.concatenate((np.expand_dims(classes,1), boxes), axis=1)
 
-            self.history  = []        
+            self.history  = []   
+            self.last_GRU_state = None     
 
         self.history.append(list(req.robot)) 
 
-        robot           = np.asarray(self.history, dtype=np.float32)
-        rob_in = tf.convert_to_tensor(np.tile([robot],[250, 1, 1]), dtype=tf.float32)
+        #robot           = np.asarray(self.history, dtype=np.float32)
+        robot           = np.asarray([list(req.robot)], dtype=np.float32)
         self.input_data = (
-            tf.convert_to_tensor(np.tile([self.language],[250, 1]), dtype=tf.int64), 
-            tf.convert_to_tensor(np.tile([self.features],[250, 1, 1]), dtype=tf.float32),
-            tf.convert_to_tensor(np.tile([robot],[250, 1, 1]), dtype=tf.float32)
+            torch.tensor(np.tile([self.language],[250, 1]), dtype=torch.int64, device=self.device), 
+            torch.tensor(np.tile([self.features],[250, 1, 1]), dtype=torch.float32, device=self.device),
+            torch.tensor(np.tile([robot],[250, 1, 1]), dtype=torch.float32, device=self.device),
+            self.last_GRU_state
         )
         #HENDRIK
-        generated, (atn, dmp_dt, phase, weights, cfeatures) = model(self.input_data, training=tf.constant(False), use_dropout=tf.constant(True), node = self.node, return_cfeature = True)
+        h = time.perf_counter()
+        with torch.no_grad():
+            generated, (atn, dmp_dt, phase, weights, cfeatures, last_GRU_state) = self.model(self.input_data, training=False, use_dropout=True, node = self.node, return_cfeature = True)
+        print(f'time for one call: {time.perf_counter() - h}')
+        print(f'phase value: {phase[-1,0]}')
+        print(f'atn : {atn}')
+        self.last_GRU_state = last_GRU_state
+        self.trj_gen    = generated.mean(axis=0).cpu().numpy()
+        self.timesteps  = int(dmp_dt.mean(axis=0).cpu().numpy() * 500)
+        self.b_weights  = (weights).mean(axis=0).cpu().numpy()
 
-        self.trj_gen    = tf.math.reduce_mean(generated, axis=0).numpy()
-        self.trj_std    = tf.math.reduce_std(generated, axis=0).numpy()
-        self.timesteps  = int(tf.math.reduce_mean(dmp_dt).numpy() * 500)
-        self.b_weights  = tf.math.reduce_mean(weights, axis=0).numpy()
-
-        phase_value     = tf.math.reduce_mean(phase, axis=0).numpy()
+        phase_value     = phase.mean(axis=0).cpu().numpy()
         phase_value     = phase_value[-1,0]
 
         self.sfp_history.append(self.b_weights[-1,:,:])
@@ -225,8 +265,8 @@ class NetworkService():
             np.save("gen_trajectory", gen_trajectory)     
             dict_of_features = {
                 'prompt' : str(req.language),
-                'cfeatures' : cfeatures[0].numpy(),
-                'attn' : atn.numpy(),
+                'cfeatures' : cfeatures[0].cpu().numpy(),
+                'attn' : atn.cpu().numpy(),
                 'features' : self.features
             }
             save_dict_of_features(dict_of_features, str(req.language))
@@ -236,7 +276,7 @@ class NetworkService():
             self.sfp_history = []
         
         self.req_step += 1
-        return (self.trj_gen.flatten().tolist(), self.trj_std.flatten().tolist(), self.timesteps, self.b_weights.flatten().tolist(), float(phase_value)) 
+        return (self.trj_gen.flatten().tolist(), [0.], self.timesteps, self.b_weights.flatten().tolist(), float(phase_value)) 
     
     def idToText(self, id):
         names = ["", "Yellow Small Round", "Red Small Round", "Green Small Round", "Blue Small Round", "Pink Small Round",
@@ -278,5 +318,6 @@ class NetworkService():
         plt.imshow(image_np)
     
 if __name__ == "__main__":
-    ot = NetworkService()
+    model = setup_model(device = 'cuda')
+    ot = NetworkService(model, device = 'cuda')
     ot.runNode()

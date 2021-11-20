@@ -8,16 +8,16 @@ import torch.nn as nn
 import time
 
 class FeedBackControllerCellTorch(nn.Module):
-    def __init__(self, robot_state_size, dimensions, basis_functions, cnfeatures_size = 5):
+    def __init__(self, robot_state_size, dimensions, basis_functions, cnfeatures_size = 5, bias = True):
         super().__init__()
         self.robot_state_size = robot_state_size
         self.dims             = dimensions
         self.n_bfuncs         = basis_functions
         self.x_shape = robot_state_size + cnfeatures_size
 
-        self.robot_gru = nn.GRUCell(input_size=self.dims, hidden_size=self.robot_state_size, bias= False)
+        self.robot_gru = nn.GRUCell(input_size=self.dims, hidden_size=self.robot_state_size, bias= bias)
 
-        self.weight_model = nn.Sequential(
+        self.kin_model = nn.Sequential(
             nn.Linear(self.x_shape, self.dims * self.n_bfuncs),
             nn.ReLU(),
             nn.Linear(self.dims * self.n_bfuncs, self.dims * self.n_bfuncs),
@@ -56,7 +56,7 @@ class FeedBackControllerCellTorch(nn.Module):
 
         # Use x to calcate the weights:
 
-        weights = self.weight_model(x).reshape([-1, self.dims, self.n_bfuncs])
+        weights = self.kin_model(x).reshape([-1, self.dims, self.n_bfuncs])
 
         # Phase estimation, based on x:
         dt    = 1.0 / (500.0 * cn_delta_t) # Calculates the actual dt
@@ -92,4 +92,4 @@ class FeedBackControllerTorch(nn.Module):
             actions_seq[:,event,:] = action
             phase_seq[:,event,:] = phase
             weights_seq[:,event,:] = weights
-        return actions_seq, phase_seq, weights_seq
+        return actions_seq, phase_seq, weights_seq, gru_output

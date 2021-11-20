@@ -52,7 +52,7 @@ class PolicyTranslationModelTorch(nn.Module):
 
 
 
-    def build_lang_gru(self, input, bias = False):
+    def build_lang_gru(self, input, bias = True):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
 
 
@@ -124,14 +124,17 @@ class PolicyTranslationModelTorch(nn.Module):
             self.build_dmp_dt_model(cfeatures, use_dropout=use_dropout)
 
         dmp_dt = self.dmp_dt_model(cfeatures)
+        if (len(inputs) > 3) and (inputs[3] is not None): #inputs includes Last_GRU_State
+            last_gru_state = inputs[3]
+        else:
+            last_gru_state = torch.zeros((batch_size, self.units), dtype=torch.float32, device=dmp_dt.device)
 
         # Run the low-level controller
         initial_state = [
             start_joints,
-            torch.zeros((batch_size, self.units), dtype=torch.float32, device=dmp_dt.device)
+            last_gru_state
         ]
-        generated, phase, weights = self.controller.forward(seq_inputs=robot, states=initial_state, constants=(cfeatures, dmp_dt), training=training)
-
+        generated, phase, weights, last_gru_state = self.controller.forward(seq_inputs=robot, states=initial_state, constants=(cfeatures, dmp_dt), training=training)
         '''print('number of parameters')
         print(f'lng gru: {len(list(self.lng_gru.parameters()))}')
 
@@ -141,7 +144,7 @@ class PolicyTranslationModelTorch(nn.Module):
         print(f'overall {len(list(self.parameters()))}')'''
 
         if return_cfeature:
-            return generated, (atn, dmp_dt, phase, weights, cfeatures)
+            return generated, (atn, dmp_dt, phase, weights, cfeatures, last_gru_state)
         else:
             return generated, (atn, dmp_dt, phase, weights)
     
