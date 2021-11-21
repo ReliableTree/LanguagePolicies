@@ -47,9 +47,10 @@ class Network():
             validation_loss = 0.0
             train_loss = []
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                if step % 100 == 0:
-                    validation_loss = self.runValidation(quick=True, pnt=False)                    
-                train_loss.append(self.step(d_in, d_out, train=True))
+                #if step % 100 == 0:
+                #    validation_loss = self.runValidation(quick=True, pnt=False)                    
+                return self.step(d_in, d_out, train=True)
+                #train_loss.append(self.step(d_in, d_out, train=True))
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
                     self.total_steps += 1
@@ -99,6 +100,7 @@ class Network():
             # # print(d_in[2].shape)
             result = self.model(d_in, training=train)
             loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
+            return result, loss
         if train:
             gradients = tape.gradient(loss, self.model.getVariables(self.global_step))
             self.optimizer.apply_gradients(zip(gradients, self.model.getVariables(self.global_step)))

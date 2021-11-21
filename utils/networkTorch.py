@@ -55,16 +55,17 @@ class NetworkTorch(nn.Module):
         self.train_ds = train_loader
         self.val_ds   = val_loader
 
-    def train(self, epochs):
+    def train(self, epochs, result):
         self.global_step = 0
         for epoch in range(epochs):
             print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
             validation_loss = 0.0
             train_loss = []
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                if step % 100 == 0:
-                    validation_loss = self.runValidation(quick=True, pnt=False)                    
-                train_loss.append(self.step(d_in, d_out, train=True))
+                #if step % 100 == 0:
+                #    validation_loss = self.runValidation(quick=True, pnt=False)    
+                return self.step(d_in, d_out, train=True, result = result)            
+                train_loss.append(self.step(d_in, d_out, train=True, result = result))
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
                     self.total_steps += 1
@@ -104,18 +105,19 @@ class NetworkTorch(nn.Module):
             print("  Validation Loss: {:.6f}".format(np.mean(val_loss)))
         return np.mean(val_loss)
 
-    def step(self, d_in, d_out, train):
+    def step(self, d_in, d_out, train, result):
         '''print('inside step: din')
         print(d_in[0].shape)
         print(d_in[1].shape)
         print(d_in[2].shape)'''
-        result = self.model(d_in, training=train)
+        #result = self.model(d_in, training=train)
         #tf_dout = [tf.convert_to_tensor(inpt.detach().cpu().numpy()) for inpt in d_out]
         #tf_result = [[tf.convert_to_tensor(inpt.detach().cpu().numpy()) for inpt in result_tp] for result_tp in result]
         #print(f'transformed result: {tf_result[0]}')
         #tf_loss, _ = self.tf_test_nw.calculateLoss(tf_dout, tf_result, train)
         #print(f'tf loss: {tf_loss} and dtype: {tf_loss.dtype}')
         loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
+        return loss
 
         #print(f'torch loss: {loss} and dtype: {loss.dtype}')
 
@@ -181,7 +183,7 @@ class NetworkTorch(nn.Module):
         return self.ce_loss(y_preds, y_labels_args)
 
     def calculateLoss(self, d_out, result, train):
-        gen_trj, (atn, dmp_dt, phs, wght)                       = result
+        gen_trj, atn, dmp_dt, phs, wght                       = result
         generated, attention, delta_t, weights, phase, loss_atn = d_out
 
         weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
