@@ -19,7 +19,7 @@ from os import path, makedirs
 class PolicyTranslationModelTorch(nn.Module):
     def __init__(self, od_path, glove_path, use_LSTM = False):
         super().__init__()
-        self.units               = 300
+        self.units               = 34
         self.output_dims         = 7
         self.basis_functions     = 11
         self.ptgloabl_units      = 42
