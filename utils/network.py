@@ -39,9 +39,25 @@ class Network():
     def setDatasets(self, train, validate):
         self.train_ds = train.ds
         self.val_ds   = validate.ds
+    
+    def count(self, m):
+        total_parameters = 0
+        for variable in m.trainable_variables:
+            # shape is an array of tf.Dimension
+            shape = variable.get_shape()
+            #print(shape)
+            #print(len(shape))
+            variable_parameters = 1
+            for dim in shape:
+                #print(dim)
+                variable_parameters *= dim
+            #print(variable_parameters)
+            total_parameters += variable_parameters
+        print(f'total parameters in controllr: {total_parameters}')
 
     def train(self, epochs):
         self.global_step = 0
+        #print(f'summary controller {num_params}')
         for epoch in range(epochs):
             print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
             validation_loss = 0.0
@@ -50,6 +66,7 @@ class Network():
                 if step % 100 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False)                    
                 train_loss.append(self.step(d_in, d_out, train=True))
+                self.model.summary()
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
                     self.total_steps += 1

@@ -37,7 +37,7 @@ WEIGHT_PHS      = 1.0
 # Number of epochs to train
 TRAIN_EPOCHS    = 200
 
-
+#tf.enable_eager_execution()
 
 class DatasetRSS():
     def __init__(self, record_path, batch_size = 16):
@@ -97,4 +97,4 @@ if __name__ == '__main__':
     hid             = hashids.Hashids()
     LOGNAME         = hid.encode(int(time.time() * 1000000))
     network = setupModel()
-    # model.summary()
+    #model.summary()

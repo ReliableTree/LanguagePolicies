@@ -7,6 +7,9 @@ import torch
 import torch.nn as nn
 import time
 
+
+    
+
 class FeedBackControllerCellTorch(nn.Module):
     def __init__(self, robot_state_size, dimensions, basis_functions, cnfeatures_size = 5, bias = True, use_LSTM = False):
         super().__init__()
@@ -17,6 +20,7 @@ class FeedBackControllerCellTorch(nn.Module):
 
         if not use_LSTM:
             self.robot_gru = nn.GRUCell(input_size=self.dims, hidden_size=self.robot_state_size, bias= bias)
+
         else:
             self.robot_gru = nn.LSTMCell(input_size=self.dims, hidden_size=self.robot_state_size, bias= bias)
 

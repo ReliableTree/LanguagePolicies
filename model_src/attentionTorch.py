@@ -17,7 +17,7 @@ class TopDownAttentionTorch(nn.Module):
         ).to(input.device)
 
         self.w2 = nn.Sequential(
-            nn.Linear(self.units, self.units),
+            nn.Linear(input.size(-1), self.units),
             nn.Sigmoid()
         ).to(input.device)
 
@@ -27,10 +27,16 @@ class TopDownAttentionTorch(nn.Module):
 
         def model(att_in):
             y_1 = self.w1(att_in)
-            y_2 = self.w2(y_1)
-            y   = torch.multiply(y_1, y_2)
+            y_2 = self.w2(att_in)
+            y   = y_1 * y_2
             a   = self.wt(y)
+            '''print('dimensions in attention Torch:')
+            print(f'att_in {att_in.shape}')
+            print(f'y_1 {y_1.shape}')
+            print(f'y_2 {y_2.shape}')
+            print(f'a {a.shape}')'''
             a   = a.squeeze()
+            #print(f'a nach squeeze {a.shape}')
             return self.softmax(a)
 
         self.attn_model = lambda inpt: model(inpt)
@@ -42,8 +48,12 @@ class TopDownAttentionTorch(nn.Module):
 
         language = inputs[0]
         features = inputs[1]
+        '''print(f'language {language.shape}')
+        print(f'features {features.shape}')'''
+
         num_regions = features.size(1)
         language = (language.unsqueeze(1)).repeat(1,num_regions,1)           # bxkxm
+        #print(f'language {language.shape}')
         att_in   = torch.cat((language, features), axis=2) # bxkx(m+n)
 
         if self.attn_model is None:
@@ -51,11 +61,4 @@ class TopDownAttentionTorch(nn.Module):
 
         return self.attn_model(att_in)
             
-        """y_1 = self.w1(att_in)
-        y_2 = self.w2(y_1)
-        y   = torch.multiply(y_1, y_2)
-        a   = self.wt(y)
-        a   = a.squeeze()
-
-        return self.softmax(a)"""
         

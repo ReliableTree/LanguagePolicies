@@ -19,7 +19,7 @@ from os import path, makedirs
 class PolicyTranslationModelTorch(nn.Module):
     def __init__(self, od_path, glove_path, use_LSTM = False):
         super().__init__()
-        self.units               = 34
+        self.units               = 32
         self.output_dims         = 7
         self.basis_functions     = 11
         self.ptgloabl_units      = 42
@@ -31,7 +31,6 @@ class PolicyTranslationModelTorch(nn.Module):
             self.frcnn.trainable = False
 
         self.embedding = GloveEmbeddings(file_path=glove_path)
-        print(self.embedding)
         self.lng_gru   = None
         self.dmp_dt_model = None
 
