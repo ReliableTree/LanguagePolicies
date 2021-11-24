@@ -36,28 +36,36 @@ class TBoardGraphsTorch():
     
     def addTrainScalar(self, name, value, stepid):
         with self.__tboard_train.as_default():
-            tfvalue = tf.convert_to_tensor(value.detach().cpu().numpy())
+            tfvalue = self.torch2tf(value)
             tf.summary.scalar(name, tfvalue, step=stepid)
 
     def addValidationScalar(self, name, value, stepid):
         with self.__tboard_validation.as_default():
-            tfvalue = tf.convert_to_tensor(value.detach().cpu().numpy())
+            tfvalue = self.torch2tf(value)
             tf.summary.scalar(name, tfvalue, step=stepid)
 
+    def torch2tf(self, inpt):
+        return tf.convert_to_tensor(inpt.detach().cpu().numpy())
+
     def plotTrajectory(self, y_true, y_pred, dt_true, dt_pred, stepid):
+        tf_y_true = self.torch2tf(y_true)
+        tf_y_pred = self.torch2tf(y_pred)
+        tf_dt_true = self.torch2tf(dt_true)
+        tf_dt_pred = self.torch2tf(dt_pred)
+
         fig, ax = plt.subplots(3,3)
         fig.set_size_inches(9, 9)
 
-        dt_true = 1.0/dt_true.numpy()
-        dt_pred = 1.0/dt_pred.numpy()[0]
+        tf_dt_true = 1.0/tf_dt_true.numpy()
+        tf_dt_pred = 1.0/tf_dt_pred.numpy()[0]
 
-        max_trj_len = y_true.shape[0]
+        max_trj_len = tf_y_true.shape[0]
         for sp in range(7):
             idx = sp // 3
             idy = sp  % 3
             ax[idx,idy].clear()
-            ax[idx,idy].plot(range(max_trj_len), y_pred[:,sp], alpha=0.5, color='midnightblue')
-            ax[idx,idy].plot(range(max_trj_len), y_true[:,sp], alpha=0.5, color='forestgreen')
+            ax[idx,idy].plot(range(max_trj_len), tf_y_pred[:,sp], alpha=0.5, color='midnightblue')
+            ax[idx,idy].plot(range(max_trj_len), tf_y_true[:,sp], alpha=0.5, color='forestgreen')
             # ax[idx,idy].plot([dt_pred, dt_pred], [-0.1, 1.1], alpha=0.5, linestyle=":", color="midnightblue")
             # ax[idx,idy].plot([dt_true, dt_true], [-0.1, 1.1], alpha=0.5, linestyle=":", color="forestgreen")
             # ax[idx,idy].set_ylim([-0.1, 1.1])
@@ -91,16 +99,19 @@ class TBoardGraphsTorch():
             tf.summary.image("Image", data=result, step=stepid)
 
     def plotAttention(self, attention_weights, image_dict, language, stepid):
-        attention_weights = attention_weights.numpy()
-        classes           = image_dict["detection_classes"][0][:len(attention_weights)].numpy().astype(dtype=np.int32)
+        tf_attention_weights = self.torch2tf(attention_weights)
+        tf_language = self.torch2tf(language)
+
+        tf_attention_weights = tf_attention_weights.numpy()
+        classes           = image_dict["detection_classes"][0][:len(tf_attention_weights)].numpy().astype(dtype=np.int32)
         classes           = [self.idToText(i) for i in classes]
-        x                 = np.arange(len(attention_weights))
+        x                 = np.arange(len(tf_attention_weights))
         
         fig, ax = plt.subplots()
-        plt.bar(x, attention_weights)
+        plt.bar(x, tf_attention_weights)
         plt.xticks(x, classes)
         ax.set_ylim([0, 1])
-        plt.text(0.01, 0.95, self.voice.tokensToSentence(language.numpy().tolist()), horizontalalignment='left', verticalalignment='center', transform=ax.transAxes)
+        plt.text(0.01, 0.95, self.voice.tokensToSentence(tf_language.numpy().tolist()), horizontalalignment='left', verticalalignment='center', transform=ax.transAxes)
 
         result = np.expand_dims(self.finishFigure(fig), 0)
         plt.close()
@@ -109,17 +120,23 @@ class TBoardGraphsTorch():
     
     def plotClassAccuracy(self, gt_class, pred_class, pred_class_std, language, stepid):
         labels     = ["ysr", "rsr", "gsr", "bsr", "psr", "ylr", "rlr", "glr", "blr", "plr", "yss", "rss", "gss", "bss", "pss", "yls", "rls", "gls", "bls", "pls"]
-        gt_class   = gt_class.numpy()
-        pred_class = pred_class.numpy()
-        x          = np.arange(len(gt_class))
+        tf_gt_class = self.torch2tf(gt_class)
+        tf_pred_class = self.torch2tf(pred_class)
+        tf_language = self.torch2tf(language)
+
+        
+        
+        tf_gt_class   = tf_gt_class.numpy()
+        tf_pred_class = tf_pred_class.numpy()
+        x          = np.arange(len(tf_gt_class))
         width      = 0.35
         
         fig, ax = plt.subplots()
-        rects1 = ax.bar(x - width/2, gt_class, width, label='GT', color="forestgreen")
-        rects2 = ax.bar(x + width/2, pred_class, width, yerr=pred_class_std, label='Pred', color="midnightblue")
+        #rects1 = ax.bar(x - width/2, gt_class, width, label='GT', color="forestgreen")
+        #rects2 = ax.bar(x + width/2, pred_class, width, yerr=pred_class_std, label='Pred', color="midnightblue")
         ax.set_xticks(x)
         # ax.set_xticklabels(labels)
-        plt.text(0.01, 0.95, self.voice.tokensToSentence(language.numpy().tolist()), horizontalalignment='left', verticalalignment='center', transform=ax.transAxes)
+        plt.text(0.01, 0.95, self.voice.tokensToSentence(tf_language.numpy().tolist()), horizontalalignment='left', verticalalignment='center', transform=ax.transAxes)
 
         result = np.expand_dims(self.finishFigure(fig), 0)
         plt.close()
@@ -127,8 +144,11 @@ class TBoardGraphsTorch():
             tf.summary.image("Attention", data=result, step=stepid)
 
     def plotDeltaT(self, y_true, y_pred, stepid):
-        gt = y_true.numpy()
-        pd = y_pred.numpy()[:,0]
+        tf_y_true = self.torch2tf(y_true)
+        tf_y_pred = self.torch2tf(y_pred)
+
+        gt = tf_y_true.numpy()
+        pd = tf_y_pred.numpy()[:,0]
         jdata = np.stack((gt,pd), axis=1)
         svals = jdata[np.argsort(jdata[:,0]),:]
         x     = np.arange(svals.shape[0])
@@ -145,10 +165,13 @@ class TBoardGraphsTorch():
             tf.summary.image("DeltaT", data=result, step=stepid)
 
     def plotWeights(self, gt_w, pred_w, stepid):
+        tf_gt_w = self.torch2tf(gt_w)
+        tf_pred_w = self.torch2tf(pred_w)
+
         fig, (ax1, ax2) = plt.subplots(1,2,sharey=True,sharex=True)
         # fig.set_size_inches(4, 10)
 
-        combined_weights = np.concatenate((gt_w.numpy(), pred_w.numpy()), axis=0).T
+        combined_weights = np.concatenate((tf_gt_w.numpy(), tf_pred_w.numpy()), axis=0).T
 
         ax1.imshow(combined_weights[:,:7], cmap="RdBu")
         ax2.imshow(combined_weights[:,7:], cmap="RdBu")
@@ -159,23 +182,33 @@ class TBoardGraphsTorch():
             tf.summary.image("Weights", data=result, step=stepid)
 
     def interpolateTrajectory(self, trj, target):
-        current_length = trj.shape[0]
-        dimensions     = trj.shape[1]
-        result         = np.zeros((target, dimensions), dtype=np.float32)
+        tf_trj = self.torch2tf(trj)
+        tf_target = self.torch2tf(target)
+
+        current_length = tf_trj.shape[0]
+        dimensions     = tf_trj.shape[1]
+        result         = np.zeros((tf_target, dimensions), dtype=np.float32)
     
         for i in range(dimensions):
-            result[:,i] = np.interp(np.linspace(0.0, 1.0, num=target), np.linspace(0.0, 1.0, num=current_length), trj[:,i])
+            result[:,i] = np.interp(np.linspace(0.0, 1.0, num=tf_target), np.linspace(0.0, 1.0, num=current_length), trj[:,i])
         
         return result
 
     def plotDMPTrajectory(self, y_true, y_pred, y_pred_std, phase, dt, p_dt, stepid):
-        y_true      = y_true.numpy()
-        y_pred      = y_pred.numpy()
-        y_pred_std  = y_pred_std.numpy()
-        phase       = phase.numpy()
-        dt          = dt.numpy() * 350.0
-        p_dt        = p_dt.numpy()
-        trj_len      = y_true.shape[0]
+        tf_y_true = self.torch2tf(y_true)
+        tf_y_pred = self.torch2tf(y_pred)
+        tf_y_pred_std = self.torch2tf(y_pred_std)
+        tf_phase = self.torch2tf(phase)
+        tf_dt = self.torch2tf(dt)
+        tf_p_dt = self.torch2tf(p_dt)
+
+        tf_y_true      = tf_y_true.numpy()
+        tf_y_pred      = tf_y_pred.numpy()
+        tf_y_pred_std  = tf_y_pred_std.numpy()
+        tf_phase       = tf_phase.numpy()
+        tf_dt          = tf_dt.numpy() * 350.0
+        tf_p_dt        = tf_p_dt.numpy()
+        trj_len      = tf_y_true.shape[0]
         
         fig, ax = plt.subplots(3,3)
         fig.set_size_inches(9, 9)
@@ -185,15 +218,15 @@ class TBoardGraphsTorch():
             ax[idx,idy].clear()
 
             # GT Trajectory:
-            ax[idx,idy].plot(range(trj_len), y_true[:,sp],   alpha=1.0, color='forestgreen')            
-            ax[idx,idy].plot(range(y_pred.shape[0]), y_pred[:,sp], alpha=0.75, color='mediumslateblue')
-            ax[idx,idy].errorbar(range(y_pred.shape[0]), y_pred[:,sp], xerr=None, yerr=y_pred_std[:,sp], alpha=0.25, fmt='none', color='mediumslateblue')
+            ax[idx,idy].plot(range(trj_len), tf_y_true[:,sp],   alpha=1.0, color='forestgreen')            
+            ax[idx,idy].plot(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], alpha=0.75, color='mediumslateblue')
+            ax[idx,idy].errorbar(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], xerr=None, yerr=tf_y_pred_std[:,sp], alpha=0.25, fmt='none', color='mediumslateblue')
             ax[idx,idy].set_ylim([-0.1, 1.1])
-            ax[idx,idy].plot([dt, dt], [0.0,1.0], linestyle=":", color='forestgreen')
+            ax[idx,idy].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
         
-        ax[2,2].plot(range(y_pred.shape[0]), phase[:,0], color='orange')
-        ax[2,2].plot([dt, dt], [0.0,1.0], linestyle=":", color='forestgreen')
-        ax[2,2].plot([p_dt*350.0, p_dt*350.0], [0.0,1.0], linestyle=":", color='mediumslateblue')
+        ax[2,2].plot(range(tf_y_pred.shape[0]), tf_phase[:,0], color='orange')
+        ax[2,2].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
+        ax[2,2].plot([tf_p_dt*350.0, tf_p_dt*350.0], [0.0,1.0], linestyle=":", color='mediumslateblue')
         ax[2,2].set_ylim([-0.1, 1.1])
 
         result = np.expand_dims(self.finishFigure(fig), 0)
