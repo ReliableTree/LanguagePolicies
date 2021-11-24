@@ -87,15 +87,20 @@ class PolicyTranslationModelTorch(nn.Module):
             use_dropout = True
 
         language_in   = inputs[0]
+        #print(f'vor if in model: {language_in}')
         if language_in is not self.last_language:
             self.last_language = language_in
 
             language_in_tf = tf.convert_to_tensor(language_in.cpu().numpy())
             language  = self.embedding(language_in_tf)
+            #print(f'language from embedding: {language[0,10:,:3]}')
+
             language = torch.tensor(language.numpy(), device=inputs[1].device)
             if self.lng_gru is None:
                 self.build_lang_gru(language)
             _, language  = self.lng_gru(language) 
+            #print(f'language from gru: {language[0,0,:5]}')
+            #print(f'_: {_.shape}')
             self.language = language.squeeze()
         features   = inputs[1]
         # local      = features[:,:,:5]

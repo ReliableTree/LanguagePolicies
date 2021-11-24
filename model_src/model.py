@@ -25,6 +25,7 @@ class PolicyTranslationModel(tf.keras.Model):
             self.frcnn.trainable = False
 
         self.embedding = GloveEmbeddings(file_path=glove_path)
+
         self.lng_gru   = tf.keras.layers.GRU(units=self.units)
 
         self.attention = TopDownAttention(units=64)
@@ -47,7 +48,7 @@ class PolicyTranslationModel(tf.keras.Model):
             ), 
         return_sequences=True)
            
-    @tf.function
+    #@tf.function
     def call(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False):
         if training:
             use_dropout = True
@@ -61,8 +62,11 @@ class PolicyTranslationModel(tf.keras.Model):
         batch_size = tf.shape(language)[0]
 
         language  = self.embedding(language)
+        print(f'language from embedding: {language[0,10:,:3]}')
+
         language  = self.lng_gru(inputs=language, training=training) 
-        print(f'num paras in language gru: {len(list(self.lng_gru.trainable_variables))}')
+        print(f'language from gru: {language.shape}')
+
         '''print('language shape')
         print(language.shape)'''
 

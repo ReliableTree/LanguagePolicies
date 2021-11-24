@@ -36,6 +36,8 @@ WEIGHT_DT       = 14.0
 WEIGHT_PHS      = 1.0
 # Number of epochs to train
 TRAIN_EPOCHS    = 200
+hid             = hashids.Hashids()
+LOGNAME         = hid.encode(int(time.time() * 1000000))
 
 #tf.enable_eager_execution()
 
@@ -92,9 +94,15 @@ def setupModel():
     network.train(epochs=TRAIN_EPOCHS)
     return network
 
-if __name__ == '__main__':
+def main_func():
     trainOnCPU()
     hid             = hashids.Hashids()
     LOGNAME         = hid.encode(int(time.time() * 1000000))
     network = setupModel()
+    return network
+
+if __name__ == '__main__':
+    trainOnCPU()
+    network = setupModel()
     #model.summary()
+

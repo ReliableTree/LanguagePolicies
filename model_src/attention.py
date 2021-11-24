@@ -15,6 +15,8 @@ class TopDownAttention(tf.keras.layers.Layer):
     def call(self, inputs, training=None):
         language = inputs[0]
         features = inputs[1]
+        print(f'language {language.shape, language[0,:5]}')
+        print(f'features {features.shape, features[0,0]}')
         k        = tf.shape(features)[1]
         #print(f'language {language.shape}')
         language = tf.tile(tf.expand_dims(language, 1), [1, k, 1])            # bxkxm

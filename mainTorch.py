@@ -62,22 +62,10 @@ def count_parameters(model):
     return total_params
 
 def init_weights(network):
-    #nw_statedict = network.state_dict()
-    '''for para in nw_statedict:
-        #print(para)
-        if 'bias' in para:
-            nw_statedict[para].data.fill_(0)
-            if 'ih' in para:
-                nw_statedict[para].requires_grad = False
-                print(para)
-
-        elif 'weight' in para:
-            torch.nn.init.orthogonal_(nw_statedict[para])'''
-
     nw_paras = network.named_parameters()
     for para_name, para in nw_paras:
         if 'bias' in para_name:
-            para.data.fill_(0)
+            para.data.fill_(0.01)
 
         elif 'weight' in para_name:
             torch.nn.init.orthogonal_(para)
@@ -86,15 +74,15 @@ def setupModel(device = 'cuda', batch_size = 16):
     print("  --> Running with default settings")
     model   = PolicyTranslationModelTorch(od_path="", glove_path=GLOVE_PATH, use_LSTM=False).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=False)
 
 
     eval_data = TorchDataset(path = VAL_DATA_TORCH, device=device)
-    eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
+    eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=False)
     network = NetworkTorch(model, logname=LOGNAME, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, gamma_sl = 1)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
     network.setup_model()
-    init_weights(network)
+    #init_weights(network)
     count_parameters(network)
 
     #print(f'number of param,eters in net: {len(list(network.parameters()))} and number of applied: {i}')

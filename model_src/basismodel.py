@@ -15,7 +15,7 @@ class BasisModel(tf.keras.layers.Layer):
         self.centers = np.linspace(0.0, 1.01, self._degree, dtype = np.float32)
         self.centers = tf.convert_to_tensor(self.centers)
 
-    @tf.function
+    #@tf.function
     def call(self, inputs, training=None):
         weights     = tf.transpose(inputs[0], perm=[0,2,1])
         weights_std = inputs[1]

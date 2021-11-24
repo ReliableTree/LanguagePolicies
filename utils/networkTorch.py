@@ -14,7 +14,7 @@ import torch.nn as nn
 import time
 
 class NetworkTorch(nn.Module):
-    def __init__(self, model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25, gamma_sl = 0.995):
+    def __init__(self, model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25, gamma_sl = 0.995, device = 'cuda'):
         super().__init__()
         self.tf_test_nw = Network(model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25)
         self.optimizer         = None
@@ -22,6 +22,7 @@ class NetworkTorch(nn.Module):
         self.total_steps       = 0
         self.logname           = logname
         self.lr = lr
+        self.device = device
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -86,6 +87,12 @@ class NetworkTorch(nn.Module):
             self._uploadToCloud()
     
     
+    def torch2tf(self, inpt):
+        return tf.convert_to_tensor(inpt.detach().cpu().numpy())
+
+    def tf2torch(self, inpt):
+        return torch.tensor(inpt.numpy(), device= self.device)
+
     def runValidation(self, quick=False, pnt=True): 
         if not quick:
             print("Running full validation...")
@@ -95,12 +102,17 @@ class NetworkTorch(nn.Module):
             if quick:
                 break
         #TODO
-        '''d_in_graphs  = (tf.tile(tf.expand_dims(d_in[0][0], 0),[50,1]), tf.tile(tf.expand_dims(d_in[1][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_in[2][0], 0),[50,1,1]))
-        d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
-                        tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
+        in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[50,1]))
+        in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[50,1,1]))
+        in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[50,1,1]))
+        d_in_graphs  = (in0, in1, in2)
+        out_model = self.model(d_in_graphs, training=True, use_dropout=True)
+        out_model_tf = [self.torch2tf(out_model[0]), [self.torch2tf(ele) for ele in out_model[1]]]
+        #d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
+        #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
         self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
                           (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                          self.model(d_in_graphs, training=True, use_dropout=True))'''
+                          out_model)
         if pnt:
             print("  Validation Loss: {:.6f}".format(np.mean(val_loss)))
         return np.mean(val_loss)
@@ -231,6 +243,6 @@ class NetworkTorch(nn.Module):
         target_trj, attention, delta_t, weights  = d_out
         gen_trj, (atn, dmp_dt, phase, wght)      = result
 
-        self.tboard.plotClassAccuracy(attention, tf.math.reduce_mean(atn, axis=0), tf.math.reduce_std(atn, axis=0), language, stepid=self.global_step)
-        self.tboard.plotDMPTrajectory(target_trj, tf.math.reduce_mean(gen_trj, axis=0), tf.math.reduce_std(gen_trj, axis=0),
-                                      tf.math.reduce_mean(phase, axis=0), delta_t, tf.math.reduce_mean(dmp_dt, axis=0), stepid=self.global_step)
+        self.tboard.plotClassAccuracy(attention, self.tf2torch(tf.math.reduce_mean(self.torch2tf(atn), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(atn), axis=0)), self.tf2torch(self.torch2tf(language)), stepid=self.global_step)
+        self.tboard.plotDMPTrajectory(target_trj, self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(gen_trj), axis=0)),
+                                      self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0)), delta_t, self.tf2torch(tf.math.reduce_mean(self.torch2tf(dmp_dt), axis=0)), stepid=self.global_step)
