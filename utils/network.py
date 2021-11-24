@@ -116,6 +116,7 @@ class Network():
             # # print(d_in[2].shape)
             result = self.model(d_in, training=train)
             loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
+            
         if train:
             gradients = tape.gradient(loss, self.model.getVariables(self.global_step))
             self.optimizer.apply_gradients(zip(gradients, self.model.getVariables(self.global_step)))
