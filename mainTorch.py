@@ -46,7 +46,7 @@ WEIGHT_DT       = 14.0
 # Weight for the phase prediction loss
 WEIGHT_PHS      = 1.0
 # Number of epochs to train
-TRAIN_EPOCHS    = 100
+TRAIN_EPOCHS    = 200
 
 
 def count_parameters(model):
@@ -82,7 +82,7 @@ def init_weights(network):
         elif 'weight' in para_name:
             torch.nn.init.orthogonal_(para)
 
-def setupModel(device = 'cuda', batch_size = 16):
+def setupModel(device = 'cuda', batch_size = 200):
     print("  --> Running with default settings")
     model   = PolicyTranslationModelTorch(od_path="", glove_path=GLOVE_PATH, use_LSTM=False).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)

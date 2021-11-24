@@ -62,7 +62,7 @@ class PolicyTranslationModel(tf.keras.Model):
 
         language  = self.embedding(language)
         language  = self.lng_gru(inputs=language, training=training) 
-        print(f'num paras in language gru: {len(list(self.lng_gru.trainable_variables))}')
+        #print(f'num paras in language gru: {len(list(self.lng_gru.trainable_variables))}')
         '''print('language shape')
         print(language.shape)'''
 
@@ -97,9 +97,9 @@ class PolicyTranslationModel(tf.keras.Model):
         print(initial_state[0].shape)
         print(initial_state[1].shape)
         print(training)'''
-        h = time.perf_counter()
+        #h = time.perf_counter()
         generated, phase, weights = self.controller(inputs=robot, constants=(cfeatures, dmp_dt), initial_state=initial_state, training=training)
-        print(f'time for controller call: {time.perf_counter() - h}')
+        #print(f'time for controller call: {time.perf_counter() - h}')
         '''print('number of parameters')
         print(f'lng gru: {len(list(self.lng_gru.trainable_variables))}')
 

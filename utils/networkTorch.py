@@ -85,7 +85,9 @@ class NetworkTorch(nn.Module):
         if self.instance_name is not None:
             self._uploadToCloud()
     
-    
+    def torch2tf(self, inpt):
+        return tf.convert_to_tensor(inpt.detach().cpu().numpy())
+
     def runValidation(self, quick=False, pnt=True): 
         if not quick:
             print("Running full validation...")
@@ -95,12 +97,12 @@ class NetworkTorch(nn.Module):
             if quick:
                 break
         #TODO
-        '''d_in_graphs  = (tf.tile(tf.expand_dims(d_in[0][0], 0),[50,1]), tf.tile(tf.expand_dims(d_in[1][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_in[2][0], 0),[50,1,1]))
-        d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
-                        tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
+        d_in_graphs  = (tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[50,1]), tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[50,1,1]), tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[50,1,1]))
+        #d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
+        #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
         self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
                           (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                          self.model(d_in_graphs, training=True, use_dropout=True))'''
+                          self.model(d_in_graphs, training=True, use_dropout=True))
         if pnt:
             print("  Validation Loss: {:.6f}".format(np.mean(val_loss)))
         return np.mean(val_loss)
