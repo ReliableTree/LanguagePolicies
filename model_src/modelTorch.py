@@ -10,6 +10,9 @@ from model_src.attentionTorch import TopDownAttentionTorch
 from model_src.glove import GloveEmbeddings
 from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
 
+from JupyterTryOut.LangGruSetup import set_up_GRU_paras_torch
+from JupyterTryOut.ATTSetup import load_Att_Torch
+
 import torch
 import torch.nn as nn
 import time
@@ -49,12 +52,12 @@ class PolicyTranslationModelTorch(nn.Module):
         )
 
         self.last_language = None
-        self.language = None
 
 
 
     def build_lang_gru(self, input, bias = True):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
+
 
 
     def build_dmp_dt_model(self, input, use_dropout):
@@ -92,16 +95,16 @@ class PolicyTranslationModelTorch(nn.Module):
             self.last_language = language_in
 
             language_in_tf = tf.convert_to_tensor(language_in.cpu().numpy())
+            language_in_tf = tf.ones_like(language_in_tf)
             language  = self.embedding(language_in_tf)
-            #print(f'language from embedding: {language[0,10:,:3]}')
 
             language = torch.tensor(language.numpy(), device=inputs[1].device)
             if self.lng_gru is None:
                 self.build_lang_gru(language)
+            #self.lng_gru = set_up_GRU_paras_torch(self.lng_gru)
             _, language  = self.lng_gru(language) 
-            #print(f'language from gru: {language[0,0,:5]}')
-            #print(f'_: {_.shape}')
-            self.language = language.squeeze()
+            language = language.squeeze()
+
         features   = inputs[1]
         # local      = features[:,:,:5]
         robot      = inputs[2]
@@ -112,17 +115,18 @@ class PolicyTranslationModelTorch(nn.Module):
         batch_size = robot.size(0)
 
         # Calculate attention and expand it to match the feature size
-        atn = self.attention((self.language, features))
+        #self.attention = load_Att_Torch(self.attention)
+        atn = self.attention((language, features))
         atn_w = atn.unsqueeze(2)
         atn_w = atn_w.repeat([1,1,5])
         # Compress image features and apply attention
-        cfeatures = torch.multiply(atn_w, features)
+        cfeatures = atn_w * features
         cfeatures = cfeatures.sum(axis=1)
 
         # Add the language to the mix again. Possibly usefull to predict dt
         start_joints  = robot[:,0,:]
 
-        cfeatures = torch.cat((cfeatures, self.language, start_joints), axis=1)
+        cfeatures = torch.cat((cfeatures, language, start_joints), axis=1)
         #cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
 
         # Policy Translation: Create weight + goal for DMP

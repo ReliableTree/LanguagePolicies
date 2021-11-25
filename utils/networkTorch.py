@@ -118,20 +118,8 @@ class NetworkTorch(nn.Module):
         return np.mean(val_loss)
 
     def step(self, d_in, d_out, train):
-        '''print('inside step: din')
-        print(d_in[0].shape)
-        print(d_in[1].shape)
-        print(d_in[2].shape)'''
         result = self.model(d_in, training=train)
-        #tf_dout = [tf.convert_to_tensor(inpt.detach().cpu().numpy()) for inpt in d_out]
-        #tf_result = [[tf.convert_to_tensor(inpt.detach().cpu().numpy()) for inpt in result_tp] for result_tp in result]
-        #print(f'transformed result: {tf_result[0]}')
-        #tf_loss, _ = self.tf_test_nw.calculateLoss(tf_dout, tf_result, train)
-        #print(f'tf loss: {tf_loss} and dtype: {tf_loss.dtype}')
         loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
-
-        #print(f'torch loss: {loss} and dtype: {loss.dtype}')
-
         if train:
             if not self.optimizer:
                 self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999)) 
@@ -139,8 +127,6 @@ class NetworkTorch(nn.Module):
             #print(f'num parametrs in model: {len(list(self.model.parameters()))}')
 
             self.optimizer.zero_grad()
-            h = time.perf_counter()
-
             loss.backward()
 
             '''for i, para in enumerate(list(self.model.parameters())):
@@ -188,10 +174,9 @@ class NetworkTorch(nn.Module):
         mse = mse * mask
         return mse.mean(-1)
 
-    def catCrossEntrLoss(self, y_labels, y_preds):
+    def catCrossEntrLoss(self, y_labels, y_pred):
         y_labels_args = torch.argmax(y_labels, dim = -1)
-
-        return self.ce_loss(y_preds, y_labels_args)
+        return nn.NLLLoss()(torch.log(y_pred), y_labels_args)
 
     def calculateLoss(self, d_out, result, train):
         gen_trj, (atn, dmp_dt, phs, wght)                       = result
@@ -200,7 +185,6 @@ class NetworkTorch(nn.Module):
         weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
         
         atn_loss = self.catCrossEntrLoss(attention, atn)
-        #print(f'atn_loss: {atn_loss}')
 
         dt_loss = self.mse_loss(delta_t, dmp_dt[:,0]).mean()
         #print(f'dt_loss: {dt_loss}')

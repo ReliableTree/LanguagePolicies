@@ -89,6 +89,12 @@ class DatasetRSS():
 def setupModel():
     print("  --> Running with default settings")
     model   = PolicyTranslationModel(od_path="", glove_path=GLOVE_PATH)
+    bs = 2
+    model((
+        np.ones((bs, 15), dtype=np.int64),
+        np.ones((bs, 6, 5), dtype=np.float32),
+        np.ones((bs, 500, 7), dtype=np.float32)
+    ))
     network = Network(model, logname=LOGNAME, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
     network.setDatasets(train=DatasetRSS(TRAIN_DATA), validate=DatasetRSS(VALIDATION_DATA))
     network.train(epochs=TRAIN_EPOCHS)

@@ -64,8 +64,6 @@ class TFToTorchConverter():
                         num_ele += 1
             initialized = True
             print(step * ele_torch.size(0))
-            if step > 100:
-                break
         print(list_with_torch_files[0].shape)
         with open(path, 'wb') as fp:   #Pickling
             pickle.dump(list_with_torch_files, fp)
@@ -103,14 +101,29 @@ class TorchDataset(torch.utils.data.Dataset):
 #       #return ((language, img_ftr, state), (trajectory, onehot, dt, weights, phase, loss_atn))
 
 if __name__ == '__main__':
-    #TTTC = TFToTorchConverter(path=VALIDATION_DATA)
-    #TTTC.show_first_item()
-    #TTTC.create_dataset(path = '../TorchDataset/val_data_torch.txt')
-    dataset = TorchDataset(path = '../TorchDataset/val_data_torch.txt', device='cuda')
-    dataloader = DataLoader(dataset, batch_size=1000, shuffle=True)
+    '''TTTC = TFToTorchConverter(path=VALIDATION_DATA)
+    TTTC.show_first_item()
+    TTTC.create_dataset(path = '../TorchDataset/val_data_torch.txt')
+    TTTC = TFToTorchConverter(path=TRAIN_DATA)
+    TTTC.show_first_item()
+    TTTC.create_dataset(path = '../TorchDataset/train_data_torch.txt')'''
+
+    train_data = DatasetRSS(TRAIN_DATA, batch_size=16).ds
+    for step, (d_in, d_out) in enumerate(train_data):
+        for i in d_out:
+            print(i[0])
+        break
+
+    dataset = TorchDataset(path = '../TorchDataset/train_data_torch.txt', device='cpu')
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=False)
     for step, (d_in, d_out) in enumerate(dataloader):
-        print(d_in[0].shape)
-        print(step)
+        for i in d_out:
+            print(i[0])
+        break
+    #dataloader = DataLoader(dataset, batch_size=1000, shuffle=True)
+    #for step, (d_in, d_out) in enumerate(dataloader):
+    #    print(d_in[0].shape)
+    #    print(step)
     #print(next(iter(dataloader))[0][2])
 
 

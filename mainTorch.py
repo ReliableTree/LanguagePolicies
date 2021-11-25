@@ -1,8 +1,7 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
 from __future__ import absolute_import, division, print_function, unicode_literals
-
-from torch._C import device
+from pickle import load
 
 from utils.tf_util import limitGPUMemory, trainOnCPU
 from model_src.model import PolicyTranslationModel
@@ -47,7 +46,8 @@ WEIGHT_DT       = 14.0
 WEIGHT_PHS      = 1.0
 # Number of epochs to train
 TRAIN_EPOCHS    = 100
-
+hid             = hashids.Hashids()
+LOGNAME         = hid.encode(int(time.time() * 1000000))
 
 def count_parameters(model):
     table = PrettyTable(["Modules", "Parameters"])
@@ -79,7 +79,7 @@ def setupModel(device = 'cuda', batch_size = 16):
 
     eval_data = TorchDataset(path = VAL_DATA_TORCH, device=device)
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=False)
-    network = NetworkTorch(model, logname=LOGNAME, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, gamma_sl = 1)
+    network = NetworkTorch(model, logname=LOGNAME, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, gamma_sl = 1, device=device)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
     network.setup_model()
     #init_weights(network)
@@ -88,13 +88,12 @@ def setupModel(device = 'cuda', batch_size = 16):
     #print(f'number of param,eters in net: {len(list(network.parameters()))} and number of applied: {i}')
     #network.load_state_dict(torch.load(MODEL_PATH), strict=True)
     network.train(epochs=TRAIN_EPOCHS)
-    #return network
+    return network
 
 if __name__ == '__main__':
-    trainOnCPU()
+    import pickle
     hid             = hashids.Hashids()
     LOGNAME         = hid.encode(int(time.time() * 1000000))
-    network = setupModel(device='cuda')
-    torch.save(network.state_dict(), MODEL_PATH)
-    # model.summary()
+    network = setupModel(device='cpu')
+    #torch.save(network.state_dict(), MODEL_PATH)
 

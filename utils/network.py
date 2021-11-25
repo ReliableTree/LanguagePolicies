@@ -66,7 +66,6 @@ class Network():
                 if step % 100 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False)                    
                 train_loss.append(self.step(d_in, d_out, train=True))
-                self.model.summary()
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
                     self.total_steps += 1
@@ -116,7 +115,6 @@ class Network():
             # # print(d_in[2].shape)
             result = self.model(d_in, training=train)
             loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
-            
         if train:
             gradients = tape.gradient(loss, self.model.getVariables(self.global_step))
             self.optimizer.apply_gradients(zip(gradients, self.model.getVariables(self.global_step)))
@@ -167,6 +165,7 @@ class Network():
         weight_dim  = [3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1]
         
         atn_loss = self.loss(y_true=attention, y_pred=atn)
+
         dt_loss  = tf.math.reduce_mean(tf.keras.metrics.mean_squared_error(delta_t, dmp_dt[:,0]))
         trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, tf.tile([[weight_dim]], [16, 350, 1]))
 

@@ -9,6 +9,8 @@ from model_src.glove import GloveEmbeddings
 from model_src.dmp import DynamicMovementPrimitive
 from model_src.basismodel import BasisModel
 from model_src.feedbackcontroller import FeedbackController
+from JupyterTryOut.LangGruSetup import set_up_GRU_tf
+from JupyterTryOut.ATTSetup import load_Att_TF
 import time
 
 class PolicyTranslationModel(tf.keras.Model):
@@ -48,24 +50,30 @@ class PolicyTranslationModel(tf.keras.Model):
             ), 
         return_sequences=True)
            
-    #@tf.function
+    @tf.function
     def call(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False):
+        #if len(self.lng_gru.trainable_variables) > 0:
+        #    self.lng_gru = set_up_GRU_tf(self.lng_gru)
         if training:
             use_dropout = True
+        
+        #if len(self.attention.trainable_variables) > 0:
+        #    self.attention = load_Att_TF(self.attention)
 
         language   = inputs[0]
+        #print(f'language before embedding: {language[:2,:5]}')
+        language = tf.ones_like(language)
         features   = inputs[1]
-        # local      = features[:,:,:5]
         robot      = inputs[2]
 
-        # dmp_state  = inputs[3]
         batch_size = tf.shape(language)[0]
 
         language  = self.embedding(language)
-        print(f'language from embedding: {language[0,10:,:3]}')
-
+        #print(f'language after embedding: {language[:2,:5,:5]}')
         language  = self.lng_gru(inputs=language, training=training) 
-        print(f'language from gru: {language.shape}')
+        #print(f'language= {language[:2,:5]}')
+
+        #print(f'language from gru: {language.shape}')
 
         '''print('language shape')
         print(language.shape)'''
@@ -87,32 +95,14 @@ class PolicyTranslationModel(tf.keras.Model):
         pt          = self.pt_global(cfeatures)
         pt          = self.dout(pt, training=tf.convert_to_tensor(use_dropout))
         dmp_dt      = self.pt_dt_2(self.pt_dt_1(pt)) + 0.1 # 0.1 prevents division by 0, just in case
-        # dmp_dt      = d_out[2]
 
         # Run the low-level controller
         initial_state = [
             start_joints,
             tf.zeros(shape=[batch_size, self.units], dtype=tf.float32)
         ]
-        '''print('input to controller')
-        print(robot.shape)
-        print(cfeatures.shape)
-        print(dmp_dt.shape)
-        print(initial_state[0].shape)
-        print(initial_state[1].shape)
-        print(training)'''
-        h = time.perf_counter()
         generated, phase, weights = self.controller(inputs=robot, constants=(cfeatures, dmp_dt), initial_state=initial_state, training=training)
-        print(f'time for controller call: {time.perf_counter() - h}')
-        '''print('number of parameters')
-        print(f'lng gru: {len(list(self.lng_gru.trainable_variables))}')
 
-        print(f'attention: {len(list(self.attention.trainable_variables))}')
-        print(f'dout: {len(list(self.dout.trainable_variables))}')
-        print(f'ptdt1: {len(list(self.pt_dt_1.trainable_variables))}')
-        print(f'ptdt2: {len(list(self.pt_dt_2.trainable_variables))}')
-        print(f'ptdtglobal: {len(list(self.pt_global.trainable_variables))}')
-        print(f'controller: {len(list(self.controller.trainable_variables))}')'''
 
 
         if return_cfeature:
