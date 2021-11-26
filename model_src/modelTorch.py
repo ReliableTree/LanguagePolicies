@@ -87,20 +87,16 @@ class PolicyTranslationModelTorch(nn.Module):
             use_dropout = True
 
         language_in   = inputs[0]
-        #print(f'vor if in model: {language_in}')
         if language_in is not self.last_language:
             self.last_language = language_in
 
             language_in_tf = tf.convert_to_tensor(language_in.cpu().numpy())
             language  = self.embedding(language_in_tf)
-            #print(f'language from embedding: {language[0,10:,:3]}')
 
             language = torch.tensor(language.numpy(), device=inputs[1].device)
             if self.lng_gru is None:
                 self.build_lang_gru(language)
             _, language  = self.lng_gru(language) 
-            #print(f'language from gru: {language[0,0,:5]}')
-            #print(f'_: {_.shape}')
             self.language = language.squeeze()
         features   = inputs[1]
         # local      = features[:,:,:5]
@@ -142,13 +138,6 @@ class PolicyTranslationModelTorch(nn.Module):
             last_gru_state
         ]
         generated, phase, weights, last_gru_state = self.controller.forward(seq_inputs=robot, states=initial_state, constants=(cfeatures, dmp_dt), training=training)
-        '''print('number of parameters')
-        print(f'lng gru: {len(list(self.lng_gru.parameters()))}')
-
-        print(f'attention: {len(list(self.attention.parameters()))}')
-        print(f'phase model: {len(list(self.dmp_dt_model_seq.parameters()))}')
-        print(f'controller: {len(list(self.controller.parameters()))}')
-        print(f'overall {len(list(self.parameters()))}')'''
 
         if return_cfeature:
             return generated, (atn, dmp_dt, phase, weights, cfeatures, last_gru_state)
@@ -170,5 +159,4 @@ class PolicyTranslationModelTorch(nn.Module):
         path_to_file = dir_path + "/Data/Model/" + add
         if not path.exists(path_to_file):
             makedirs(path_to_file)
-        print(f'path to file: {path_to_file}')
         torch.save(self.state_dict(), path_to_file + "policy_translation")

@@ -34,7 +34,7 @@ VALIDATION_DATA = "../GDrive/validate.tfrecord"
 # Location of the GloVe word embeddings
 GLOVE_PATH      = "../GDrive/glove.6B.50d.txt"
 # Learning rate for the adam optimizer
-LEARNING_RATE   = 0.0001
+LEARNING_RATE   = 0.001
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
@@ -79,7 +79,7 @@ def setupModel(device = 'cuda', batch_size = 16):
 
     eval_data = TorchDataset(path = VAL_DATA_TORCH, device=device)
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=False)
-    network = NetworkTorch(model, logname=LOGNAME, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, gamma_sl = 1)
+    network = NetworkTorch(model, logname=LOGNAME, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, gamma_sl = 1, device=device)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
     network.setup_model()
     #init_weights(network)
@@ -94,7 +94,7 @@ if __name__ == '__main__':
     trainOnCPU()
     hid             = hashids.Hashids()
     LOGNAME         = hid.encode(int(time.time() * 1000000))
-    network = setupModel(device='cuda')
+    network = setupModel(device='cuda', batch_size = 1000)
     torch.save(network.state_dict(), MODEL_PATH)
     # model.summary()
 

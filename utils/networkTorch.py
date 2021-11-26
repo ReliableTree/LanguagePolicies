@@ -118,19 +118,9 @@ class NetworkTorch(nn.Module):
         return np.mean(val_loss)
 
     def step(self, d_in, d_out, train):
-        '''print('inside step: din')
-        print(d_in[0].shape)
-        print(d_in[1].shape)
-        print(d_in[2].shape)'''
         result = self.model(d_in, training=train)
-        #tf_dout = [tf.convert_to_tensor(inpt.detach().cpu().numpy()) for inpt in d_out]
-        #tf_result = [[tf.convert_to_tensor(inpt.detach().cpu().numpy()) for inpt in result_tp] for result_tp in result]
-        #print(f'transformed result: {tf_result[0]}')
-        #tf_loss, _ = self.tf_test_nw.calculateLoss(tf_dout, tf_result, train)
-        #print(f'tf loss: {tf_loss} and dtype: {tf_loss.dtype}')
         loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
 
-        #print(f'torch loss: {loss} and dtype: {loss.dtype}')
 
         if train:
             if not self.optimizer:
@@ -145,7 +135,6 @@ class NetworkTorch(nn.Module):
 
             '''for i, para in enumerate(list(self.model.parameters())):
                 print(f'para num {i} has grad sum {para.grad.detach().sum()}')'''
-            #print(f'gradient: {list(self.model.parameters())[0].grad}')
             self.optimizer.step()
 
             self.tboard.addTrainScalar("Loss", loss, self.global_step)
@@ -188,10 +177,9 @@ class NetworkTorch(nn.Module):
         mse = mse * mask
         return mse.mean(-1)
 
-    def catCrossEntrLoss(self, y_labels, y_preds):
+    def catCrossEntrLoss(self, y_labels, y_pred):
         y_labels_args = torch.argmax(y_labels, dim = -1)
-
-        return self.ce_loss(y_preds, y_labels_args)
+        return nn.NLLLoss()(torch.log(y_pred), y_labels_args)
 
     def calculateLoss(self, d_out, result, train):
         gen_trj, (atn, dmp_dt, phs, wght)                       = result
@@ -200,24 +188,17 @@ class NetworkTorch(nn.Module):
         weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
         
         atn_loss = self.catCrossEntrLoss(attention, atn)
-        #print(f'atn_loss: {atn_loss}')
 
         dt_loss = self.mse_loss(delta_t, dmp_dt[:,0]).mean()
-        #print(f'dt_loss: {dt_loss}')
 
         repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
         trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim)
         trj_loss = (trj_loss * loss_atn).mean()
-        #print(f'trj_loss: {trj_loss}')
    
         phs_loss = self.calculateMSEWithPaddingMask(phase, phs[:,:,0], loss_atn).mean()
-        #print(f'phs_loss: {phs_loss}')
         #TODO why :-1?'''
         weight_loss = nn.MSELoss(reduction='none')(wght[:,:-1,:,:], wght[:,:-1,:,:].roll(shifts = -1, dims = 1)).mean((-2,-1))
-        '''print('weight loss')
-        print(weight_loss.shape)'''
         weight_loss = (weight_loss * loss_atn[:,:-1]).mean()
-        #print(f'weight_loss: {weight_loss}')
         return (atn_loss * self.lw_atn +
                 trj_loss * self.lw_trj +
                 phs_loss * self.lw_phs +

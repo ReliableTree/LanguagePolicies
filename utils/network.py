@@ -39,7 +39,7 @@ class Network():
     def setDatasets(self, train, validate):
         self.train_ds = train.ds
         self.val_ds   = validate.ds
-    
+
     def count(self, m):
         total_parameters = 0
         for variable in m.trainable_variables:
@@ -66,7 +66,7 @@ class Network():
                 if step % 100 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False)                    
                 train_loss.append(self.step(d_in, d_out, train=True))
-                self.model.summary()
+                #self.model.summary()
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
                     self.total_steps += 1

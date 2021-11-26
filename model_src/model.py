@@ -48,7 +48,7 @@ class PolicyTranslationModel(tf.keras.Model):
             ), 
         return_sequences=True)
            
-    #@tf.function
+    @tf.function
     def call(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False):
         if training:
             use_dropout = True
@@ -62,13 +62,8 @@ class PolicyTranslationModel(tf.keras.Model):
         batch_size = tf.shape(language)[0]
 
         language  = self.embedding(language)
-        print(f'language from embedding: {language[0,10:,:3]}')
 
         language  = self.lng_gru(inputs=language, training=training) 
-        print(f'language from gru: {language.shape}')
-
-        '''print('language shape')
-        print(language.shape)'''
 
         # Calculate attention and expand it to match the feature size
         atn = self.attention((language, features))
@@ -94,25 +89,9 @@ class PolicyTranslationModel(tf.keras.Model):
             start_joints,
             tf.zeros(shape=[batch_size, self.units], dtype=tf.float32)
         ]
-        '''print('input to controller')
-        print(robot.shape)
-        print(cfeatures.shape)
-        print(dmp_dt.shape)
-        print(initial_state[0].shape)
-        print(initial_state[1].shape)
-        print(training)'''
-        h = time.perf_counter()
-        generated, phase, weights = self.controller(inputs=robot, constants=(cfeatures, dmp_dt), initial_state=initial_state, training=training)
-        print(f'time for controller call: {time.perf_counter() - h}')
-        '''print('number of parameters')
-        print(f'lng gru: {len(list(self.lng_gru.trainable_variables))}')
 
-        print(f'attention: {len(list(self.attention.trainable_variables))}')
-        print(f'dout: {len(list(self.dout.trainable_variables))}')
-        print(f'ptdt1: {len(list(self.pt_dt_1.trainable_variables))}')
-        print(f'ptdt2: {len(list(self.pt_dt_2.trainable_variables))}')
-        print(f'ptdtglobal: {len(list(self.pt_global.trainable_variables))}')
-        print(f'controller: {len(list(self.controller.trainable_variables))}')'''
+        generated, phase, weights = self.controller(inputs=robot, constants=(cfeatures, dmp_dt), initial_state=initial_state, training=training)
+
 
 
         if return_cfeature:
