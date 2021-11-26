@@ -1,12 +1,11 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
 from __future__ import absolute_import, division, print_function, unicode_literals
+from os import path
 import tensorflow as tf
-import tensorflow_probability as tfp
 import sys
 import numpy as np
 from utils.graphsTorch import TBoardGraphsTorch
-from utils.network import Network
 import tensorflow as tf
 
 import torch
@@ -14,15 +13,15 @@ import torch.nn as nn
 import time
 
 class NetworkTorch(nn.Module):
-    def __init__(self, model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25, gamma_sl = 0.995, device = 'cuda'):
+    def __init__(self, model, data_path, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25, gamma_sl = 0.995, device = 'cuda'):
         super().__init__()
-        self.tf_test_nw = Network(model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25)
         self.optimizer         = None
         self.model             = model
         self.total_steps       = 0
         self.logname           = logname
         self.lr = lr
         self.device = device
+        self.data_path = data_path
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -30,7 +29,7 @@ class NetworkTorch(nn.Module):
         else:
             self.instance_name = None
 
-        self.tboard            = TBoardGraphsTorch(self.logname)
+        self.tboard            = TBoardGraphsTorch(self.logname, data_path=data_path)
         self.loss              = nn.CrossEntropyLoss()
         self.global_best_loss  = float('inf')
         self.last_written_step = -1
@@ -78,7 +77,7 @@ class NetworkTorch(nn.Module):
             print(f'learning rate: {self.scheduler.get_last_lr()[0]}')
 
             #TODO
-            self.model.saveModelToFile(self.logname + "/")
+            self.model.saveModelToFile(add = self.logname + "/", data_path = self.data_path)
 
             if epoch % self.log_freq == 0 and self.instance_name is not None:
                 self._uploadToCloud(epoch)
@@ -155,7 +154,7 @@ class NetworkTorch(nn.Module):
                 loss = loss.detach().cpu()
                 if loss < self.global_best_loss:
                     self.global_best_loss = loss
-                    self.model.saveModelToFile(self.logname + "/best/")
+                    self.model.saveModelToFile(add=self.logname + "/best/", data_path= self.data_path)
                     print(f'model saved with loss: {loss}')
 
         return loss.detach().cpu().numpy()

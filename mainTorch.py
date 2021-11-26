@@ -2,14 +2,8 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-from torch._C import device
-
-from utils.tf_util import limitGPUMemory, trainOnCPU
-from model_src.model import PolicyTranslationModel
-from utils.network import Network
 from model_src.modelTorch import PolicyTranslationModelTorch
 from utils.networkTorch import NetworkTorch
-import tensorflow as tf
 import hashids
 import time
 import numpy as np
@@ -18,21 +12,10 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from utils.convertTFDataToPytorchData import TorchDataset
 from prettytable import PrettyTable
+import sys
 
 
-TRAIN_DATA_TORCH = '../TorchDataset/train_data_torch.txt'
 
-VAL_DATA_TORCH = '../TorchDataset/val_data_torch.txt'
-
-MODEL_PATH = '../TorchDataset/test_init_model.pth'
-
-
-# Location of the training data
-TRAIN_DATA      = "../GDrive/train.tfrecord"
-# Location of the validation data
-VALIDATION_DATA = "../GDrive/validate.tfrecord"
-# Location of the GloVe word embeddings
-GLOVE_PATH      = "../GDrive/glove.6B.50d.txt"
 # Learning rate for the adam optimizer
 LEARNING_RATE   = 0.001
 # Weight for the attention loss
@@ -46,7 +29,7 @@ WEIGHT_DT       = 14.0
 # Weight for the phase prediction loss
 WEIGHT_PHS      = 1.0
 # Number of epochs to train
-TRAIN_EPOCHS    = 100
+TRAIN_EPOCHS    = 1000
 
 
 def count_parameters(model):
@@ -70,31 +53,51 @@ def init_weights(network):
         elif 'weight' in para_name:
             torch.nn.init.orthogonal_(para)
 
-def setupModel(device = 'cuda', batch_size = 16):
+def setupModel(device = 'cuda', batch_size = 16, path_dict = None, logname = None, model_path=None):
     print("  --> Running with default settings")
-    model   = PolicyTranslationModelTorch(od_path="", glove_path=GLOVE_PATH, use_LSTM=False).to(device)
-    train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
+    model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], use_LSTM=False).to(device)
+    train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=False)
 
 
-    eval_data = TorchDataset(path = VAL_DATA_TORCH, device=device)
+    eval_data = TorchDataset(path = path_dict['VAL_DATA_TORCH'], device=device)
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=False)
-    network = NetworkTorch(model, logname=LOGNAME, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, gamma_sl = 1, device=device)
+    network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, gamma_sl = 0.995, device=device)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
     network.setup_model()
+    if model_path is not None:
+        model.load_state_dict(torch.load(model_path))
     #init_weights(network)
     count_parameters(network)
 
     #print(f'number of param,eters in net: {len(list(network.parameters()))} and number of applied: {i}')
     #network.load_state_dict(torch.load(MODEL_PATH), strict=True)
     network.train(epochs=TRAIN_EPOCHS)
-    #return network
-
+    return network
+import os
 if __name__ == '__main__':
-    trainOnCPU()
-    hid             = hashids.Hashids()
-    LOGNAME         = hid.encode(int(time.time() * 1000000))
-    network = setupModel(device='cuda', batch_size = 1000)
-    torch.save(network.state_dict(), MODEL_PATH)
-    # model.summary()
+    args = sys.argv[1:]
+    if '-path' not in args:
+        print('no path given, not executing code')
+    else:    
+        data_path = args[args.index('-path') + 1]
+        path_dict = {
+        'TRAIN_DATA_TORCH' : os.path.join(data_path, 'TorchDataset/train_data_torch.txt'),
+        'VAL_DATA_TORCH' : os.path.join(data_path, 'TorchDataset/val_data_torch.txt'),
+        'MODEL_PATH' : os.path.join(data_path, 'TorchDataset/test_model.pth'),
+        'TRAIN_DATA' : os.path.join(data_path, 'GDrive/train.tfrecord'),
+        'VAL_DATA' : os.path.join(data_path, 'GDrive/validate.tfrecord'),
+        'GLOVE_PATH' : os.path.join(data_path, 'GDrive/glove.6B.50d.txt'),
+        'DATA_PATH' : data_path
+        }
+
+        model_path = None
+        if '-model' in args:
+            model_path = args[args.index('-model') + 1]
+
+        hid             = hashids.Hashids()
+        logname         = hid.encode(int(time.time() * 1000000))
+        network = setupModel(device='cuda', batch_size = 1000, path_dict = path_dict, logname=logname, model_path=model_path)
+        print(f'end saving: {path_dict["MODEL_PATH"]}')
+        torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 

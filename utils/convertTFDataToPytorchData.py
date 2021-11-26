@@ -8,12 +8,7 @@ currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentfram
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir) 
 
-from utils.tf_util import limitGPUMemory, trainOnCPU
-from model_src.model import PolicyTranslationModel
-from utils.network import Network
 import tensorflow as tf
-import hashids
-import time
 import numpy as np
 import torch
 import pickle
@@ -48,7 +43,6 @@ class TFToTorchConverter():
         self.train_data = DatasetRSS(path, batch_size=1000).ds
 
     def create_dataset(self, path):
-        num_elements = 0
         list_with_torch_files = []
         initialized = False
         #((language, img_ftr, state), (trajectory, onehot, dt, weights, phase, loss_atn))
@@ -103,14 +97,29 @@ class TorchDataset(torch.utils.data.Dataset):
 #       #return ((language, img_ftr, state), (trajectory, onehot, dt, weights, phase, loss_atn))
 
 if __name__ == '__main__':
-    #TTTC = TFToTorchConverter(path=VALIDATION_DATA)
-    #TTTC.show_first_item()
-    #TTTC.create_dataset(path = '../TorchDataset/val_data_torch.txt')
-    dataset = TorchDataset(path = '../TorchDataset/val_data_torch.txt', device='cuda')
-    dataloader = DataLoader(dataset, batch_size=1000, shuffle=True)
-    for step, (d_in, d_out) in enumerate(dataloader):
-        print(d_in[0].shape)
-        print(step)
-    #print(next(iter(dataloader))[0][2])
+    args = sys.argv[1:]
+    if '-path' not in args:
+        print('no path given, not executing code')
+    else:    
+        data_path = args[args.index('-path') + 1]
+        path_dict = {
+        'TRAIN_DATA_TORCH' : os.path.join(data_path, 'TorchDataset/train_data_torch.txt'),
+        'VAL_DATA_TORCH' : os.path.join(data_path, 'TorchDataset/val_data_torch.txt'),
+        'MODEL_PATH' : os.path.join(data_path, 'TorchDataset/test_model.pth'),
+        'TRAIN_DATA' : os.path.join(data_path, 'GDrive/train.tfrecord'),
+        'VAL_DATA' : os.path.join(data_path, 'GDrive/validate.tfrecord'),
+        'GLOVE_PATH' : os.path.join(data_path, 'GDrive/glove.6B.50d.txt'),
+        'DATA_PATH' : data_path
+        }
+        TTTC = TFToTorchConverter(path = path_dict['VAL_DATA'])
+        TTTC.create_dataset(path = path_dict['VAL_DATA_TORCH'])
+        TTTC = TFToTorchConverter(path = path_dict['TRAIN_DATA'])
+        TTTC.create_dataset(path = path_dict['TRAIN_DATA_TORCH'])
+        #dataset = TorchDataset(path = '../TorchDataset/val_data_torch.txt', device='cuda')
+        #dataloader = DataLoader(dataset, batch_size=1000, shuffle=True)
+        #for step, (d_in, d_out) in enumerate(dataloader):
+        #    print(d_in[0].shape)
+        #    print(step)
+        #print(next(iter(dataloader))[0][2])
 
 

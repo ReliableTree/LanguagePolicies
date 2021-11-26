@@ -154,9 +154,11 @@ class PolicyTranslationModelTorch(nn.Module):
         variables += self.pt_w_3.trainable_variables
         return variables
     
-    def saveModelToFile(self, add):
-        dir_path = path.dirname(path.realpath(__file__))
-        path_to_file = dir_path + "/Data/Model/" + add
+    def saveModelToFile(self, add, data_path):
+        import os
+        #dir_path = path.dirname(path.realpath(__file__))
+        path_to_file = os.path.join(data_path, "Data/Model/", add)
         if not path.exists(path_to_file):
             makedirs(path_to_file)
-        torch.save(self.state_dict(), path_to_file + "policy_translation")
+        print(f'saveModelToFile pathL: {path_to_file}')
+        torch.save(self.state_dict(), path_to_file + "policy_translation_h")

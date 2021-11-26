@@ -12,14 +12,17 @@ from utils.voice import Voice
 import sklearn
 import sklearn.preprocessing
 from utils.intprim.gaussian_model import GaussianModel
+import os
 
 class TBoardGraphsTorch():
-    def __init__(self, logname):
+    def __init__(self, logname, data_path):
         self.__hashids           = Hashids()
-        self.logdir              = "Data/TBoardLog/" + logname + "/"
+        #self.logdir              = "Data/TBoardLog/" + logname + "/"
+        self.logdir              = os.path.join(data_path, "gboard/" + logname + "/")
+        print(f'log dir: {self.logdir + "train/"}')
         self.__tboard_train      = tf.summary.create_file_writer(self.logdir + "train/")
         self.__tboard_validation = tf.summary.create_file_writer(self.logdir + "validate/")
-        self.voice               = Voice()
+        self.voice               = Voice(path=data_path)
 
     def startDebugger(self):
         tf.summary.trace_on(graph=True, profiler=True)
