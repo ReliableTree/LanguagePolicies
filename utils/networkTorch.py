@@ -117,6 +117,7 @@ class NetworkTorch(nn.Module):
         return np.mean(val_loss)
 
     def step(self, d_in, d_out, train):
+        #print(f'in network bias {self.model.state_dict()["attention.wt.weight"].T}')
         result = self.model(d_in, training=train)
         loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
 

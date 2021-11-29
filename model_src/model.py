@@ -48,7 +48,7 @@ class PolicyTranslationModel(tf.keras.Model):
             ), 
         return_sequences=True)
            
-    @tf.function
+    #@tf.function
     def call(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False):
         if training:
             use_dropout = True
@@ -63,7 +63,11 @@ class PolicyTranslationModel(tf.keras.Model):
 
         language  = self.embedding(language)
 
-        language  = self.lng_gru(inputs=language, training=training) 
+
+        language  = self.lng_gru(inputs=language, training=training)
+        print(f'language: {language[0]}')
+        print(language.shape) 
+        print(list(self.lng_gru.trainable_variables))
 
         # Calculate attention and expand it to match the feature size
         atn = self.attention((language, features))

@@ -98,6 +98,12 @@ class PolicyTranslationModelTorch(nn.Module):
                 self.build_lang_gru(language)
             _, language  = self.lng_gru(language) 
             self.language = language.squeeze()
+            print(f'language: {self.language[0]}')
+            print(self.language.shape) 
+            for para in self.lng_gru.state_dict():
+                print(self.lng_gru.state_dict()[para].T)
+
+
         features   = inputs[1]
         # local      = features[:,:,:5]
         robot      = inputs[2]
@@ -119,7 +125,6 @@ class PolicyTranslationModelTorch(nn.Module):
         start_joints  = robot[:,0,:]
 
         cfeatures = torch.cat((cfeatures, self.language, start_joints), axis=1)
-        #cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
 
         # Policy Translation: Create weight + goal for DMP
         if self.dmp_dt_model is None:

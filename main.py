@@ -98,11 +98,18 @@ def setupModel():
         np.ones((bs, 500, 7), dtype=np.float32)
     ))
     model.load_weights(MODEL_PATH)
-    model.summary()
-    network = Network(model, logname=LOGNAME, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
-    network.setDatasets(train=DatasetRSS(TRAIN_DATA), validate=DatasetRSS(VALIDATION_DATA))
-    network.train(epochs=TRAIN_EPOCHS)
-    return network
+    generated, (atn, dmp_dt, phase, weights) = model((
+        np.ones((bs, 15), dtype=np.int64),
+        np.ones((bs, 6, 5), dtype=np.float32),
+        np.ones((bs, 500, 7), dtype=np.float32)
+    ))
+    print(generated[0,0])
+    print(generated[0,0].shape)
+    #model.summary()
+    #network = Network(model, logname=LOGNAME, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
+    #network.setDatasets(train=DatasetRSS(TRAIN_DATA), validate=DatasetRSS(VALIDATION_DATA))
+    #network.train(epochs=TRAIN_EPOCHS)
+    return model
 
 def main_func():
     trainOnCPU()
@@ -113,6 +120,6 @@ def main_func():
 
 if __name__ == '__main__':
     trainOnCPU()
-    network = setupModel()
+    model = setupModel()
     #model.summary()
 
