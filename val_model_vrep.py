@@ -31,14 +31,14 @@ HEADLESS            = False
 USE_SHAPE_SIZE      = True
 # Run on the test data, or start the simulator in manual mode 
 # (manual mode will allow you to generate environments and type in your own commands)
-RUN_ON_TEST_DATA    = False
+RUN_ON_TEST_DATA    = True
 # How many of the 100 test-data do you want to test?
 NUM_TESTED_DATA     = 100
 # Where to find the normailization?
-NORM_PATH           = "../GDrive/normalization_v2.pkl"
+NORM_PATH           = "/home/hendrik/Documents/master_project/LokalData/GDrive/normalization_v2.pkl"
 # Where to find the VRep scene file. This has to be an absolute path. 
-VREP_SCENE          = "../GDrive/NeurIPS2020.ttt"
-VREP_SCENE          = os.getcwd() + "/" + VREP_SCENE
+VREP_SCENE          = "/home/hendrik/Documents/master_project/LokalData/GDrive/NeurIPS2020.ttt"
+#VREP_SCENE          = os.getcwd() + "/" + VREP_SCENE
 
 class Simulator(object):
     def __init__(self, args=None):
@@ -59,7 +59,7 @@ class Simulator(object):
         self.trajectory    = None
         self.global_step   = 0
         self.normalization = pickle.load(open(NORM_PATH, mode="rb"), encoding="latin1")
-        self.voice         = Voice(load=False)  
+        self.voice         = Voice(path= '/home/hendrik/Documents/master_project/LokalData/',load=False)  
 
         self.shape_size_replacement = {}
         self.shape_size_replacement["58z29D2omoZ_2.json"] = "spill everything into the large curved dish"
@@ -506,7 +506,7 @@ class Simulator(object):
     def evalDirect(self, runs):
         #delete my data dict at beginning
         delete_dict()
-        files = glob.glob("../GDrive/testdata/*_1.json")
+        files = glob.glob("/home/hendrik/Documents/master_project/LokalData/GDrive/testdata/*_1.json")
         self.node.get_logger().info("Using data directory with {} files".format(len(files)))
         files = files[:runs]
         files = [f[:-6] for f in files]
@@ -529,7 +529,7 @@ class Simulator(object):
             if data["phase_1"][n]["success"] and data["phase_2"][n]["success"]:
                 c_p2  += 1
 
-        self.node.get_logger().info("Whole Task: {}/{} ({:.1f}%)".format(c_p2,  len(names), 100.0 * float(c_p2)  / float(len(names))))
+        #self.node.get_logger().info("Whole Task: {}/{} ({:.1f}%)".format(c_p2,  len(names), 100.0 * float(c_p2)  / float(len(names))))
 
         with open("val_result.json", "w") as fh:
             json.dump(data, fh)

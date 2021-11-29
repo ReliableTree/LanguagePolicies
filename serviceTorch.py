@@ -30,21 +30,21 @@ FORCE_CPU    = True
 # Use dropout at run-time for stochastif-forward passes
 USE_DROPOUT  = True
 # Where can we find the trained model?
-MODEL_PATH   = '../TorchDataset/test_cuda_model.pth'
+MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/r0xGg7EJvnk/best/policy_translation_h'
 # Where is a pre-trained faster-rcnn?
-FRCNN_PATH   = "../GDrive/rcnn"
+FRCNN_PATH   = "/home/hendrik/Documents/master_project/LokalData/GDrive/rcnn"
 # Where are the GloVe word embeddings?
-GLOVE_PATH   = "../GDrive/glove.6B.50d.txt"
+GLOVE_PATH   = "/home/hendrik/Documents/master_project/LokalData/GDrive/glove.6B.50d.txt"
 # Where is the normalization of the dataset?
-NORM_PATH    = "../GDrive/normalization_v2.pkl"
+NORM_PATH    = "/home/hendrik/Documents/master_project/LokalData/GDrive/normalization_v2.pkl"
 
 
 # Location of the training data
-TRAIN_DATA      = "../GDrive/train.tfrecord"
+TRAIN_DATA      = "/home/hendrik/Documents/master_project/LokalData/GDrive/train.tfrecord"
 # Location of the validation data
-VALIDATION_DATA = "../GDrive/validate.tfrecord"
+VALIDATION_DATA = "/home/hendrik/Documents/master_project/LokalData/GDrive/validate.tfrecord"
 # Location of the GloVe word embeddings
-GLOVE_PATH      = "../GDrive/glove.6B.50d.txt"
+GLOVE_PATH      = "/home/hendrik/Documents/master_project/LokalData/GDrive/glove.6B.50d.txt"
 # Learning rate for the adam optimizer
 LEARNING_RATE   = 1e-4
 # Weight for the attention loss
@@ -60,11 +60,11 @@ WEIGHT_PHS      = 1.0
 # Number of epochs to train
 TRAIN_EPOCHS    = 100
 
-TRAIN_DATA_TORCH = '../TorchDataset/train_data_torch.txt'
+TRAIN_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/train_data_torch.txt'
 
-VAL_DATA_TORCH = '../TorchDataset/val_data_torch.txt'
+VAL_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/val_data_torch.txt'
 
-MODEL_PATH = '../TorchDataset/test_cuda_model.pth'
+MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/r0xGg7EJvnk/best/policy_translation_h'
 
 from torch.utils.data import DataLoader
 from utils.convertTFDataToPytorchData import TorchDataset
@@ -85,10 +85,10 @@ def setup_model(device = 'cpu', batch_size = 1000):
 
     eval_data = TorchDataset(path = VAL_DATA_TORCH, device=device)
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
-    network = NetworkTorch(model, logname='LOGNAME', lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
+    network = NetworkTorch(model, data_path='/home/hendrik/Documents/master_project/LokalData', logname='LOGNAME', lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
     network.setup_model()
-    network.load_state_dict(torch.load(MODEL_PATH), strict=True)
+    model.load_state_dict(torch.load(MODEL_PATH))
     return model
 
 class NetworkService():

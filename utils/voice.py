@@ -4,10 +4,14 @@ import numpy as np
 import copy
 import os
 class Voice():
-    def __init__(self, path, use_synonyms=True, load=True):
+    def __init__(self, path = None, use_synonyms=True, load=True):
         self.use_syn = use_synonyms
         if load:
-            self.dict = self._loadDictionary(os.path.join(path, "GDrive/glove.6B.50d.txt"))
+            if path is not None:
+                self.dict = self._loadDictionary(os.path.join(path, "GDrive/glove.6B.50d.txt"))
+            else:
+                self.dict = self._loadDictionary("../GDrive/glove.6B.50d.txt")
+
             self.inv_dict = {v: k for (k, v) in self.dict.items()}
 
         self.map_bowls          = {}

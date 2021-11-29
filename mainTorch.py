@@ -17,7 +17,7 @@ import sys
 
 
 # Learning rate for the adam optimizer
-LEARNING_RATE   = 0.001
+LEARNING_RATE   = 0.0001
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
@@ -57,12 +57,12 @@ def setupModel(device = 'cuda', batch_size = 16, path_dict = None, logname = Non
     print("  --> Running with default settings")
     model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], use_LSTM=False).to(device)
     train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
 
     eval_data = TorchDataset(path = path_dict['VAL_DATA_TORCH'], device=device)
-    eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=False)
-    network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, gamma_sl = 0.995, device=device)
+    eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
+    network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, gamma_sl = 1, device=device)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
     network.setup_model()
     if model_path is not None:
