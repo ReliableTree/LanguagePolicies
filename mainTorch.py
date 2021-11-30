@@ -55,8 +55,11 @@ def init_weights(network):
 
 def setupModel(device = 'cuda', batch_size = 16, path_dict = None, logname = None, model_path=None):
     print("  --> Running with default settings")
-    model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], use_LSTM=False).to(device)
+    model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], use_LSTM=True).to(device)
+    print(path_dict['TRAIN_DATA_TORCH'])
     train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
+    print('asd')
+
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
 
@@ -64,6 +67,8 @@ def setupModel(device = 'cuda', batch_size = 16, path_dict = None, logname = Non
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
     network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, gamma_sl = 1, device=device)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
+    print('gdfg')
+
     network.setup_model()
     if model_path is not None:
         model.load_state_dict(torch.load(model_path))
@@ -97,7 +102,7 @@ if __name__ == '__main__':
 
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
-        network = setupModel(device='cuda', batch_size = 1000, path_dict = path_dict, logname=logname, model_path=model_path)
+        network = setupModel(device='cuda', batch_size = 200, path_dict = path_dict, logname=logname, model_path=model_path)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 
