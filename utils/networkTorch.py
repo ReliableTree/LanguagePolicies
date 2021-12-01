@@ -119,6 +119,9 @@ class NetworkTorch(nn.Module):
 
     def step(self, d_in, d_out, train):
         result = self.model(d_in, training=train)
+        atn = self.calculateLoss(d_out, result, train)
+        print(f'atn: {atn}')
+        return 
         loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
         if train:
             if not self.optimizer:
@@ -185,6 +188,7 @@ class NetworkTorch(nn.Module):
         weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
         
         atn_loss = self.catCrossEntrLoss(attention, atn)
+        return  atn_loss
 
         dt_loss = self.mse_loss(delta_t, dmp_dt[:,0]).mean()
         #print(f'dt_loss: {dt_loss}')

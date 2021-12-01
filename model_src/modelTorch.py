@@ -12,12 +12,65 @@ from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
 
 from JupyterTryOut.LangGruSetup import set_up_GRU_paras_torch
 from JupyterTryOut.ATTSetup import load_Att_Torch
+from JupyterTryOut.dmpSetup import load_torch_dmp
 
 import torch
 import torch.nn as nn
 import time
 
 from os import path, makedirs
+
+class myHardSigmoid(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, input):
+        result = input
+        result_size = result.size()
+        result = result.view(-1)
+        result[result < -2.5] = 0
+        result[result > 2.5] = 1
+        result[(result >= -2.5) & (result <= 2.5)] = 0.2*result+0.5
+        result = result.view(*result_size)
+        return result
+
+class dmp_dt_torch(nn.Module):
+    def __init__(self, ptgloabl_units, units) -> None:
+        super().__init__()
+        self.ptgloabl_units = ptgloabl_units
+        self.units = units
+
+
+    def build_dmp_dt_model(self, input):
+            pre_layers = [
+                nn.Linear(input.size(-1), self.ptgloabl_units),
+                nn.ReLU()
+            ]
+            
+            post_layers = [
+                nn.Linear(self.ptgloabl_units, self.units * 2),
+                nn.ReLU(),
+                nn.Linear(self.units * 2, 1),
+                myHardSigmoid()
+            ]
+
+            self.dmp_dt_model_pre = nn.ModuleList(pre_layers).to(input.device)
+            self.dmp_dt_model_post = nn.ModuleList(post_layers).to(input.device)
+
+            def build_model(inpt, use_dropout):
+                result = inpt
+                for l in self.dmp_dt_model_pre:
+                    result = l(result)
+
+                if use_dropout:
+                    print('used dropout')
+                    result = nn.Dropout(p=0.25)(result)
+
+                for l in self.dmp_dt_model_post:
+                    result = l(result)
+                return result + 0.1
+
+            self.dmp_model = build_model
 
 class PolicyTranslationModelTorch(nn.Module):
     def __init__(self, od_path, glove_path, use_LSTM = False):
@@ -60,28 +113,35 @@ class PolicyTranslationModelTorch(nn.Module):
 
 
 
-    def build_dmp_dt_model(self, input, use_dropout):
-        layers = [
+    '''def build_dmp_dt_model(self, input):
+        pre_layers = [
             nn.Linear(input.size(-1), self.ptgloabl_units),
             nn.ReLU()
         ]
-        if use_dropout:
-            layers.append(nn.Dropout(p=0.25))
         
-        layers += [
+        post_layers = [
             nn.Linear(self.ptgloabl_units, self.units * 2),
             nn.ReLU(),
             nn.Linear(self.units * 2, 1),
             nn.Hardsigmoid()
         ]
 
-        self.dmp_dt_model_seq = nn.Sequential(*layers).to(input.device)
+        self.dmp_dt_model_pre = nn.ModuleList(pre_layers).to(input.device)
+        self.dmp_dt_model_post = nn.ModuleList(post_layers).to(input.device)
 
-        def build_model(inpt):
-            dmp_dt = self.dmp_dt_model_seq(inpt)
-            return dmp_dt + 0.1
+        def build_model(inpt, use_dropout):
+            result = inpt
+            for l in self.dmp_dt_model_pre:
+                result = l(result)
 
-        self.dmp_dt_model = build_model
+            if use_dropout:
+                result = nn.Dropout(p=0.25)(result)
+
+            for l in self.dmp_dt_model_post:
+                result = l(result)
+            return result + 0.1
+
+        self.dmp_dt_model = build_model'''
 
 
 
@@ -95,16 +155,21 @@ class PolicyTranslationModelTorch(nn.Module):
             self.last_language = language_in
 
             language_in_tf = tf.convert_to_tensor(language_in.cpu().numpy())
-            language_in_tf = tf.ones_like(language_in_tf)
+            #language_in_tf = tf.ones_like(language_in_tf)
             language  = self.embedding(language_in_tf)
+            #print(f'language after embedding: {language[0, :5,:5]}')
 
             language = torch.tensor(language.numpy(), device=inputs[1].device)
             if self.lng_gru is None:
                 self.build_lang_gru(language)
-            #self.lng_gru = set_up_GRU_paras_torch(self.lng_gru)
+            self.lng_gru = set_up_GRU_paras_torch(self.lng_gru)
+            print(f'langafe shape: {language.shape}')
+            language[:,:3] = torch.zeros_like(language[:,:3])
             _, language  = self.lng_gru(language) 
             language = language.squeeze()
 
+        print(f'language after gru: {language[:5,:5]}')
+        return
         features   = inputs[1]
         # local      = features[:,:,:5]
         robot      = inputs[2]
@@ -115,7 +180,7 @@ class PolicyTranslationModelTorch(nn.Module):
         batch_size = robot.size(0)
 
         # Calculate attention and expand it to match the feature size
-        #self.attention = load_Att_Torch(self.attention)
+        self.attention = load_Att_Torch(self.attention)
         atn = self.attention((language, features))
         atn_w = atn.unsqueeze(2)
         atn_w = atn_w.repeat([1,1,5])
@@ -131,9 +196,13 @@ class PolicyTranslationModelTorch(nn.Module):
 
         # Policy Translation: Create weight + goal for DMP
         if self.dmp_dt_model is None:
-            self.build_dmp_dt_model(cfeatures, use_dropout=use_dropout)
+            self.dmp_dt_model = dmp_dt_torch(ptgloabl_units=self.ptgloabl_units, units=self.units)
+            self.dmp_dt_model.build_dmp_dt_model(cfeatures)
+        #print(f'cfeatures: {cfeatures.shape}')
+        self.dmp_dt_model = load_torch_dmp(self.dmp_dt_model)
 
-        dmp_dt = self.dmp_dt_model(cfeatures)
+        dmp_dt = self.dmp_dt_model.dmp_model(inpt = cfeatures, use_dropout=False)
+        #print(f'dmp_dt: {dmp_dt}')
         if (len(inputs) > 3) and (inputs[3] is not None): #inputs includes Last_GRU_State
             last_gru_state = inputs[3]
         else:

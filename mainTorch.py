@@ -87,6 +87,12 @@ def setupModel(device = 'cuda', batch_size = 16):
 
     #print(f'number of param,eters in net: {len(list(network.parameters()))} and number of applied: {i}')
     #network.load_state_dict(torch.load(MODEL_PATH), strict=True)
+    bs = 3
+    model((
+        torch.ones((bs, 15), dtype=torch.int64),
+        torch.ones((bs, 6, 5), dtype=torch.float32),
+        torch.ones((bs, 500, 7), dtype=torch.float32)
+    ))
     network.train(epochs=TRAIN_EPOCHS)
     return network
 

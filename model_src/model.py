@@ -11,7 +11,26 @@ from model_src.basismodel import BasisModel
 from model_src.feedbackcontroller import FeedbackController
 from JupyterTryOut.LangGruSetup import set_up_GRU_tf
 from JupyterTryOut.ATTSetup import load_Att_TF
+from JupyterTryOut.dmpSetup import load_tf_dmp
 import time
+class dt_tf(tf.keras.Model):
+    def __init__(self, units = 32, output_dims = 7) -> None:
+        super().__init__()
+        self.units               = units
+        self.output_dims         = output_dims
+        self.dout      = tf.keras.layers.Dropout(rate=0.25)
+
+        # Units needs to be divisible by 7
+        self.pt_global = tf.keras.layers.Dense(units=42, activation=tf.keras.activations.relu)
+
+        self.pt_dt_1   = tf.keras.layers.Dense(units=self.units * 2, activation=tf.keras.activations.relu)
+        self.pt_dt_2   = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.hard_sigmoid)
+
+    def call(self, inputs, use_dropout=False):
+        pt          = self.pt_global(inputs)
+        pt          = self.dout(pt, training=tf.convert_to_tensor(use_dropout))
+        dmp_dt      = self.pt_dt_2(self.pt_dt_1(pt)) + 0.1 # 0.1 prevents division by 0, just in case
+        return dmp_dt
 
 class PolicyTranslationModel(tf.keras.Model):
     def __init__(self, od_path, glove_path, special=None):
@@ -35,10 +54,11 @@ class PolicyTranslationModel(tf.keras.Model):
         self.dout      = tf.keras.layers.Dropout(rate=0.25)
 
         # Units needs to be divisible by 7
-        self.pt_global = tf.keras.layers.Dense(units=42, activation=tf.keras.activations.relu)
+        self.dmt_model = dt_tf(units=self.units, output_dims=self.output_dims)
+        '''self.pt_global = tf.keras.layers.Dense(units=42, activation=tf.keras.activations.relu)
 
         self.pt_dt_1   = tf.keras.layers.Dense(units=self.units * 2, activation=tf.keras.activations.relu)
-        self.pt_dt_2   = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.hard_sigmoid)
+        self.pt_dt_2   = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.hard_sigmoid)'''
 
         self.controller = tf.keras.layers.RNN(
             FeedbackController(
@@ -50,33 +70,37 @@ class PolicyTranslationModel(tf.keras.Model):
             ), 
         return_sequences=True)
            
-    @tf.function
+    #@tf.function
     def call(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False):
-        #if len(self.lng_gru.trainable_variables) > 0:
-        #    self.lng_gru = set_up_GRU_tf(self.lng_gru)
+        if len(self.lng_gru.trainable_variables) > 0:
+            self.lng_gru = set_up_GRU_tf(self.lng_gru)
         if training:
             use_dropout = True
         
-        #if len(self.attention.trainable_variables) > 0:
-        #    self.attention = load_Att_TF(self.attention)
+        if len(self.attention.trainable_variables) > 0:
+            self.attention = load_Att_TF(self.attention)
 
         language   = inputs[0]
         #print(f'language before embedding: {language[:2,:5]}')
-        language = tf.ones_like(language)
+
+        #language = tf.convert_to_tensor(language)
+        #language = tf.ones_like(language)
+        #print(f'language shape: {language.shape}')
         features   = inputs[1]
         robot      = inputs[2]
 
         batch_size = tf.shape(language)[0]
 
         language  = self.embedding(language)
-        #print(f'language after embedding: {language[:2,:5,:5]}')
+        language = language.numpy()
+
+        language[:,:3] = np.zeros_like(language[:,:3])
+
+        language = tf.convert_to_tensor(language)
+
         language  = self.lng_gru(inputs=language, training=training) 
-        #print(f'language= {language[:2,:5]}')
-
-        #print(f'language from gru: {language.shape}')
-
-        '''print('language shape')
-        print(language.shape)'''
+        print(f'language gru: {language[:5,:5]}')
+        return
 
         # Calculate attention and expand it to match the feature size
         atn = self.attention((language, features))
@@ -85,6 +109,7 @@ class PolicyTranslationModel(tf.keras.Model):
         # Compress image features and apply attention
         cfeatures = tf.math.multiply(atn_w, features)
         cfeatures = tf.math.reduce_sum(cfeatures, axis=1)
+        #print(f'cfeatures= {cfeatures[:2,:5]}')
 
         # Add the language to the mix again. Possibly usefull to predict dt
         start_joints  = robot[:,0,:]
@@ -92,15 +117,21 @@ class PolicyTranslationModel(tf.keras.Model):
         cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
 
         # Policy Translation: Create weight + goal for DMP
-        pt          = self.pt_global(cfeatures)
+        '''pt          = self.pt_global(cfeatures)
         pt          = self.dout(pt, training=tf.convert_to_tensor(use_dropout))
-        dmp_dt      = self.pt_dt_2(self.pt_dt_1(pt)) + 0.1 # 0.1 prevents division by 0, just in case
+        dmp_dt      = self.pt_dt_2(self.pt_dt_1(pt)) + 0.1 # 0.1 prevents division by 0, just in case'''
+        if len(self.dmt_model.trainable_variables) > 0:
+            self.dmt_model = load_tf_dmp(self.dmt_model)
+            print('loaded parameters!')
+        dmp_dt = self.dmt_model(cfeatures, use_dropout=False)
+        #print(f'dmp_dt: {dmp_dt}')
 
         # Run the low-level controller
         initial_state = [
             start_joints,
             tf.zeros(shape=[batch_size, self.units], dtype=tf.float32)
         ]
+        #print(f'controller inputs: {robot.shape, cfeatures.shape, dmp_dt.shape, initial_state[0].shape, initial_state[1].shape}')
         generated, phase, weights = self.controller(inputs=robot, constants=(cfeatures, dmp_dt), initial_state=initial_state, training=training)
 
 

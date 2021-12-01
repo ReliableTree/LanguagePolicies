@@ -56,12 +56,15 @@ class FeedBackControllerCellTorch(nn.Module):
             in_robot = st_robot_last
 
         #h = time.perf_counter()
+        #print(f'in_robot: {in_robot[0][:5]}')
+        #print(f'st_gru_last: {st_gru_last[0][:5]}')
         if st_robot_last is not None:
             gru_output = self.robot_gru(in_robot, st_gru_last)
         else:
             gru_output = self.robot_gru(in_robot)
         #print(f'time for one cell call: {time.perf_counter() - h}')
         # Internal state:
+        #print(f'gru_output: {gru_output[0,:5]}')
         if len(gru_output) == 2:
             x = torch.cat((cn_features, gru_output[0]), axis=1)
         else:
