@@ -109,16 +109,24 @@ class PolicyTranslationModelTorch(nn.Module):
 
         # Calculate attention and expand it to match the feature size
         atn = self.attention((self.language, features))
-        atn_w = atn.unsqueeze(2)
+        '''atn_w = atn.unsqueeze(2)
         atn_w = atn_w.repeat([1,1,5])
         # Compress image features and apply attention
         cfeatures = torch.multiply(atn_w, features)
-        cfeatures = cfeatures.sum(axis=1)
+        cfeatures = cfeatures.sum(axis=1)'''
+
+        main_obj = torch.argmax(atn, dim=-1)
+        counter = torch.arange(features.size(0))
+        cfeatures_max = features[(counter, main_obj)]
+        #print(f'atn: {atn[0], atn.shape}')
+        #print(f'featues: {features[0], features.shape}')
+        #print(f'cfeatures: {cfeatures[0], cfeatures.shape}')
+        #print(f'cfeatures_max: {cfeatures_max[0], cfeatures_max.shape}')
 
         # Add the language to the mix again. Possibly usefull to predict dt
         start_joints  = robot[:,0,:]
 
-        cfeatures = torch.cat((cfeatures, self.language, start_joints), axis=1)
+        cfeatures = torch.cat((cfeatures_max, self.language, start_joints), axis=1)
         #cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
 
         # Policy Translation: Create weight + goal for DMP
