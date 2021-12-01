@@ -16,6 +16,44 @@ import time
 
 from os import path, makedirs
 
+class dmp_dt_torch(nn.Module):
+    def __init__(self, ptgloabl_units, units) -> None:
+        super().__init__()
+        self.ptgloabl_units = ptgloabl_units
+        self.units = units
+
+
+    def build_dmp_dt_model(self, input):
+            pre_layers = [
+                nn.Linear(input.size(-1), self.ptgloabl_units),
+                nn.ReLU()
+            ]
+            
+            post_layers = [
+                nn.Linear(self.ptgloabl_units, self.units * 2),
+                nn.ReLU(),
+                nn.Linear(self.units * 2, 1),
+                nn.Hardsigmoid()
+            ]
+
+            self.dmp_dt_model_pre = nn.ModuleList(pre_layers).to(input.device)
+            self.dmp_dt_model_post = nn.ModuleList(post_layers).to(input.device)
+
+            def build_model(inpt, use_dropout):
+                result = inpt
+                for l in self.dmp_dt_model_pre:
+                    result = l(result)
+
+                if use_dropout:
+                    print('used dropout')
+                    result = nn.Dropout(p=0.25)(result)
+
+                for l in self.dmp_dt_model_post:
+                    result = l(result)
+                return result + 0.1
+
+            self.dmp_model = build_model
+
 class PolicyTranslationModelTorch(nn.Module):
     def __init__(self, od_path, glove_path, use_LSTM = False):
         super().__init__()
@@ -49,7 +87,6 @@ class PolicyTranslationModelTorch(nn.Module):
         )
 
         self.last_language = None
-        self.language = None
 
 
 
@@ -57,36 +94,12 @@ class PolicyTranslationModelTorch(nn.Module):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
 
 
-    def build_dmp_dt_model(self, input, use_dropout):
-        layers = [
-            nn.Linear(input.size(-1), self.ptgloabl_units),
-            nn.ReLU()
-        ]
-        if use_dropout:
-            layers.append(nn.Dropout(p=0.25))
-        
-        layers += [
-            nn.Linear(self.ptgloabl_units, self.units * 2),
-            nn.ReLU(),
-            nn.Linear(self.units * 2, 1),
-            nn.Hardsigmoid()
-        ]
-
-        self.dmp_dt_model_seq = nn.Sequential(*layers).to(input.device)
-
-        def build_model(inpt):
-            dmp_dt = self.dmp_dt_model_seq(inpt)
-            return dmp_dt + 0.1
-
-        self.dmp_dt_model = build_model
-
-
-
     def forward(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False):
         if training:
             use_dropout = True
 
         language_in   = inputs[0]
+        #print(f'vor if in model: {language_in}')
         if language_in is not self.last_language:
             self.last_language = language_in
 
@@ -97,43 +110,39 @@ class PolicyTranslationModelTorch(nn.Module):
             if self.lng_gru is None:
                 self.build_lang_gru(language)
             _, language  = self.lng_gru(language) 
-            self.language = language.squeeze()
+            language = language.squeeze()
+
         features   = inputs[1]
         # local      = features[:,:,:5]
         robot      = inputs[2]
 
         # dmp_state  = inputs[3]
 
-
-        batch_size = robot.size(0)
-
         # Calculate attention and expand it to match the feature size
-        atn = self.attention((self.language, features))
-        '''atn_w = atn.unsqueeze(2)
-        atn_w = atn_w.repeat([1,1,5])
-        # Compress image features and apply attention
-        cfeatures = torch.multiply(atn_w, features)
-        cfeatures = cfeatures.sum(axis=1)'''
-
+        atn = self.attention((language, features))
         main_obj = torch.argmax(atn, dim=-1)
         counter = torch.arange(features.size(0))
         cfeatures_max = features[(counter, main_obj)]
-        #print(f'atn: {atn[0], atn.shape}')
-        #print(f'featues: {features[0], features.shape}')
-        #print(f'cfeatures: {cfeatures[0], cfeatures.shape}')
-        #print(f'cfeatures_max: {cfeatures_max[0], cfeatures_max.shape}')
+        '''atn_w = atn.unsqueeze(2)
+        atn_w = atn_w.repeat([1,1,5])
+        # Compress image features and apply attention
+        cfeatures = atn_w * features
+        cfeatures = cfeatures.sum(axis=1)'''
 
         # Add the language to the mix again. Possibly usefull to predict dt
         start_joints  = robot[:,0,:]
 
-        cfeatures = torch.cat((cfeatures_max, self.language, start_joints), axis=1)
+        cfeatures = torch.cat((cfeatures_max, language, start_joints), axis=1)
         #cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
 
         # Policy Translation: Create weight + goal for DMP
         if self.dmp_dt_model is None:
-            self.build_dmp_dt_model(cfeatures, use_dropout=use_dropout)
+            self.dmp_dt_model = dmp_dt_torch(ptgloabl_units=self.ptgloabl_units, units=self.units)
+            self.dmp_dt_model.build_dmp_dt_model(cfeatures)
+        #print(f'cfeatures: {cfeatures.shape}')
 
-        dmp_dt = self.dmp_dt_model(cfeatures)
+        dmp_dt = self.dmp_dt_model.dmp_model(inpt = cfeatures, use_dropout=False)
+        #print(f'dmp_dt: {dmp_dt}')
         if (len(inputs) > 3) and (inputs[3] is not None): #inputs includes Last_GRU_State
             last_gru_state = inputs[3]
         else:

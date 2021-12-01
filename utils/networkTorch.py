@@ -48,7 +48,7 @@ class NetworkTorch(nn.Module):
     def setup_model(self):
         with torch.no_grad():
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                result = self.model(d_in, training=True)
+                result = self.model(inputs=d_in, training=True)
                 break
 
     def setDatasets(self, train_loader, val_loader):
