@@ -62,7 +62,7 @@ class FeedBackControllerCellTorch(nn.Module):
             gru_output = self.robot_gru(in_robot)
         #print(f'time for one cell call: {time.perf_counter() - h}')
         # Internal state:
-        if len(gru_output) == 2:
+        if type(gru_output) is list:
             x = torch.cat((cn_features, gru_output[0]), axis=1)
         else:
             x = torch.cat((cn_features, gru_output), axis=1)

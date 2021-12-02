@@ -94,9 +94,10 @@ class PolicyTranslationModelTorch(nn.Module):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
 
 
-    def forward(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False):
+    def forward(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False, gt_attention = None):
         if training:
             use_dropout = True
+            gt_attention = None
 
         language_in   = inputs[0]
         #print(f'vor if in model: {language_in}')
@@ -120,7 +121,10 @@ class PolicyTranslationModelTorch(nn.Module):
 
         # Calculate attention and expand it to match the feature size
         atn = self.attention((language, features))
-        main_obj = torch.argmax(atn, dim=-1)
+        if gt_attention is None:
+            main_obj = torch.argmax(atn, dim=-1)
+        else:
+            main_obj = torch.argmax(gt_attention, dim=-1) 
         counter = torch.arange(features.size(0))
         cfeatures_max = features[(counter, main_obj)]
         '''atn_w = atn.unsqueeze(2)

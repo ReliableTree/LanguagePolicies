@@ -6,8 +6,6 @@ import numpy as np
 import pathlib
 from model_src.attention import TopDownAttention
 from model_src.glove import GloveEmbeddings
-from model_src.dmp import DynamicMovementPrimitive
-from model_src.basismodel import BasisModel
 from model_src.feedbackcontroller import FeedbackController
 import time
 

@@ -8,12 +8,12 @@ from utils.network import Network
 import tensorflow as tf
 import hashids
 import time
-import glob
-import pickle
+#import glob
+#import pickle
 import numpy as np
-import shutil
-import os.path
-import sys
+#import shutil
+#import os.path
+#import sys
 
 
 # Location of the training data

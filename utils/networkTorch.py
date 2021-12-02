@@ -117,8 +117,9 @@ class NetworkTorch(nn.Module):
         return np.mean(val_loss)
 
     def step(self, d_in, d_out, train):
-        result = self.model(d_in, training=train)
-        loss, (atn, trj, dt, phs, wght) = self.calculateLoss(d_out, result, train)
+        generated, attention, delta_t, weights, phase, loss_atn = d_out
+        result = self.model(d_in, training=train, gt_attention = attention)
+        loss, (atn, trj, dt, phs, wght, rel_obj) = self.calculateLoss(d_out, result, train)
 
 
         if train:
@@ -143,6 +144,7 @@ class NetworkTorch(nn.Module):
             self.tboard.addTrainScalar("Loss Phase", phs, self.global_step)
             self.tboard.addTrainScalar("Loss Weight", wght, self.global_step)
             self.tboard.addTrainScalar("Loss Delta T", dt, self.global_step)
+            self.tboard.addTrainScalar("Relative Object correct", rel_obj, self.global_step)
         else:
             if self.last_written_step != self.global_step:
                 self.last_written_step = self.global_step
@@ -152,6 +154,8 @@ class NetworkTorch(nn.Module):
                 self.tboard.addValidationScalar("Loss Phase", phs, self.global_step)
                 self.tboard.addValidationScalar("Loss Weight", wght, self.global_step)
                 self.tboard.addValidationScalar("Loss Delta T", dt, self.global_step)
+                self.tboard.addValidationScalar("Relative Object correct", rel_obj, self.global_step)
+
                 loss = loss.detach().cpu()
                 if loss < self.global_best_loss:
                     self.global_best_loss = loss
@@ -188,6 +192,11 @@ class NetworkTorch(nn.Module):
         weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
         
         atn_loss = self.catCrossEntrLoss(attention, atn)
+        '''print(f'gt attention argmax: {torch.argmax(attention, dim=-1)}')
+        print(f'attention argmax: {torch.argmax(atn, dim=-1)}')
+        print(f'abs correct: {(torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()}')'''
+
+        rel_correct_objects = (torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()/len(atn)
 
         dt_loss = self.mse_loss(delta_t, dmp_dt[:,0]).mean()
 
@@ -204,7 +213,7 @@ class NetworkTorch(nn.Module):
                 phs_loss * self.lw_phs +
                 weight_loss * self.lw_w + 
                 dt_loss  * self.lw_dt,
-                (atn_loss, trj_loss, dt_loss, phs_loss, weight_loss)
+                (atn_loss, trj_loss, dt_loss, phs_loss, weight_loss, rel_correct_objects)
             )
     
     def loadingBar(self, count, total, size, addition="", end=False):
