@@ -9,6 +9,11 @@ from model_src.attention import TopDownAttention
 from model_src.attentionTorch import TopDownAttentionTorch
 from model_src.glove import GloveEmbeddings
 from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
+from model_src.controllerTransformer import ControllerTransformer
+
+from utils.Transformer import TransformerModel
+from utils.Transformer import generate_square_subsequent_mask
+from utils.torch_util import dmp_dt_torch
 
 import torch
 import torch.nn as nn
@@ -16,51 +21,17 @@ import time
 
 from os import path, makedirs
 
-class dmp_dt_torch(nn.Module):
-    def __init__(self, ptgloabl_units, units) -> None:
-        super().__init__()
-        self.ptgloabl_units = ptgloabl_units
-        self.units = units
-
-
-    def build_dmp_dt_model(self, input):
-            pre_layers = [
-                nn.Linear(input.size(-1), self.ptgloabl_units),
-                nn.ReLU()
-            ]
-            
-            post_layers = [
-                nn.Linear(self.ptgloabl_units, self.units * 2),
-                nn.ReLU(),
-                nn.Linear(self.units * 2, 1),
-                nn.Hardsigmoid()
-            ]
-
-            self.dmp_dt_model_pre = nn.ModuleList(pre_layers).to(input.device)
-            self.dmp_dt_model_post = nn.ModuleList(post_layers).to(input.device)
-
-            def build_model(inpt, use_dropout):
-                result = inpt
-                for l in self.dmp_dt_model_pre:
-                    result = l(result)
-
-                if use_dropout:
-                    print('used dropout')
-                    result = nn.Dropout(p=0.25)(result)
-
-                for l in self.dmp_dt_model_post:
-                    result = l(result)
-                return result + 0.1
-
-            self.dmp_model = build_model
 
 class PolicyTranslationModelTorch(nn.Module):
-    def __init__(self, od_path, glove_path, use_LSTM = False):
+    def __init__(self, od_path, glove_path, use_LSTM = False, use_lang_transformer = True, use_controller_transformer = True, use_obj_embedding = True):
         super().__init__()
         self.units               = 32
         self.output_dims         = 7
         self.basis_functions     = 11
         self.ptgloabl_units      = 42
+        self.use_lang_trans      = use_lang_transformer
+        self.use_controller_transformer = use_controller_transformer
+        self.use_obj_embedding = use_obj_embedding
 
         if od_path != "":                
             od_path    = pathlib.Path(od_path)/"saved_model" 
@@ -68,23 +39,35 @@ class PolicyTranslationModelTorch(nn.Module):
             self.frcnn = self.frcnn.signatures['serving_default']
             self.frcnn.trainable = False
 
+        if use_obj_embedding:
+            self.obj_embedding = None
+
         self.embedding = GloveEmbeddings(file_path=glove_path)
-        self.lng_gru   = None
-        self.dmp_dt_model = None
+        if use_lang_transformer:
+            self.lang_trans  = None
+            self.trans_d_hid = 200
+            self.nhead       = 1
+            self.nlayers     = 2
+            self.transformer_seq_embedding = None
+        else:
+            self.lng_gru   = None
 
         self.attention = TopDownAttentionTorch(units=64)
 
         self.dout      = nn.Dropout(p=0.25)
 
         # Units needs to be divisible by 7
-
-        self.controller = FeedBackControllerTorch(
-            robot_state_size=self.units,
-            dimensions=self.output_dims,
-            basis_functions=self.basis_functions,
-            cnfeatures_size=self.units + self.output_dims + 5,
-            use_LSTM = use_LSTM
-        )
+        if use_controller_transformer:
+            self.controller_transformer = None
+        else:
+            self.dmp_dt_model = None
+            self.controller = FeedBackControllerTorch(
+                robot_state_size=self.units,
+                dimensions=self.output_dims,
+                basis_functions=self.basis_functions,
+                cnfeatures_size=self.units + self.output_dims + 5,
+                use_LSTM = use_LSTM
+            )
 
         self.last_language = None
 
@@ -108,15 +91,28 @@ class PolicyTranslationModelTorch(nn.Module):
             language  = self.embedding(language_in_tf)
 
             language = torch.tensor(language.numpy(), device=inputs[1].device)
-            if self.lng_gru is None:
-                self.build_lang_gru(language)
-            _, language  = self.lng_gru(language) 
-            language = language.squeeze()
+            if self.use_lang_trans:
+                if self.lang_trans is None:
+                    self.lang_trans = TransformerModel(ntoken=language.size(-1), d_output=self.units, d_model=self.trans_d_hid, nhead=self.nhead, d_hid=self.trans_d_hid, nlayers=self.nlayers)
+                    self.lang_trans.to(language.device)
+                language = self.lang_trans(language.transpose(0,1)) #size: S, N, D
+                #print(f'language after trans: {language.shape}')
+                language = language.transpose(0,1)                  #size: N, S, D
+                #print(f'language after transpose: {language.shape}')
+                if self.transformer_seq_embedding is None:
+                    self.transformer_seq_embedding = nn.Linear(language.size(-2) * language.size(-1), language.size(-1)).to(language.device)
+                language = self.transformer_seq_embedding(language.reshape(language.size(0), -1))
+                #print(f'language after embedding: {language.shape}')
+            else:
+                if self.lng_gru is None:
+                    self.build_lang_gru(language)
+                _, language  = self.lng_gru(language) 
+            #print(f'language shape: {language.shape}')
+            language = language.squeeze()               #16 x 32
 
-        features   = inputs[1]
+        features   = inputs[1]                          #16x6x5 first entry is object class
         # local      = features[:,:,:5]
-        robot      = inputs[2]
-
+        robot      = inputs[2]                           #16x350x7
         # dmp_state  = inputs[3]
 
         # Calculate attention and expand it to match the feature size
@@ -126,7 +122,12 @@ class PolicyTranslationModelTorch(nn.Module):
         else:
             main_obj = torch.argmax(gt_attention, dim=-1) 
         counter = torch.arange(features.size(0))
-        cfeatures_max = features[(counter, main_obj)]
+        cfeatures_max = features[(counter, main_obj)]           #16x5
+        if self.use_obj_embedding:
+            if self.obj_embedding is None:
+                self.obj_embedding = nn.Embedding(30, 10).to(robot.device)
+            obj_feature_embedding = self.obj_embedding(cfeatures_max[:,0].to(dtype=torch.int32))   #16x10
+            cfeatures_max = torch.cat((cfeatures_max[:,1:], obj_feature_embedding), dim = -1)
         '''atn_w = atn.unsqueeze(2)
         atn_w = atn_w.repeat([1,1,5])
         # Compress image features and apply attention
@@ -134,36 +135,60 @@ class PolicyTranslationModelTorch(nn.Module):
         cfeatures = cfeatures.sum(axis=1)'''
 
         # Add the language to the mix again. Possibly usefull to predict dt
-        start_joints  = robot[:,0,:]
 
-        cfeatures = torch.cat((cfeatures_max, language, start_joints), axis=1)
-        #cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
+        if self.use_controller_transformer:
+            cfeatures = torch.cat((cfeatures_max, language), axis=1)   #16x46
+            #print(f'cfeatures after cat: {cfeatures.shape}')
+            cfeatures = cfeatures.unsqueeze(1).repeat(1,350,1)         #16x350x46
+            #print(f'cfeatures after repeat: {cfeatures.shape}')
+            inpt_seq = torch.cat((cfeatures, robot), dim = -1)          #16x350x53
+            #print(f'inpt_seq: {inpt_seq.shape}')
 
-        # Policy Translation: Create weight + goal for DMP
-        if self.dmp_dt_model is None:
-            self.dmp_dt_model = dmp_dt_torch(ptgloabl_units=self.ptgloabl_units, units=self.units)
-            self.dmp_dt_model.build_dmp_dt_model(cfeatures)
-        #print(f'cfeatures: {cfeatures.shape}')
+            if self.controller_transformer is None:
+                self.controller_transformer = ControllerTransformer(ntoken=53, d_output=7, d_model=200, nhead=2, d_hid=200, nlayers=2).to(inpt_seq.device)
+                self.trans_seq_len = max(inpt_seq.size(1), 350)
+                self.src_mask = src_mask = generate_square_subsequent_mask(self.trans_seq_len).to(inpt_seq.device)
+            if inpt_seq.size(1) != self.trans_seq_len:
+                src_mask = src_mask[:inpt_seq.size(1), :inpt_seq.size(1)]
+            generated = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = self.src_mask)  #350x16x7
+            #print(f'generated before: {generated.shape}')
 
-        dmp_dt = self.dmp_dt_model.dmp_model(inpt = cfeatures, use_dropout=False)
-        #print(f'dmp_dt: {dmp_dt}')
-        if (len(inputs) > 3) and (inputs[3] is not None): #inputs includes Last_GRU_State
-            last_gru_state = inputs[3]
+            generated = generated.transpose(0,1)                              #16x350x7
+            #print(f'generated after: {generated.shape}')
+
+            return generated, atn
+
         else:
-            #last_gru_state = torch.zeros((batch_size, self.units), dtype=torch.float32, device=dmp_dt.device)
-            last_gru_state = None
+            start_joints  = robot[:,0,:]
+            cfeatures = torch.cat((cfeatures_max, language, start_joints), axis=1)
 
-        # Run the low-level controller
-        initial_state = [
-            start_joints,
-            last_gru_state
-        ]
-        generated, phase, weights, last_gru_state = self.controller.forward(seq_inputs=robot, states=initial_state, constants=(cfeatures, dmp_dt), training=training)
+            #cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
 
-        if return_cfeature:
-            return generated, (atn, dmp_dt, phase, weights, cfeatures, last_gru_state)
-        else:
-            return generated, (atn, dmp_dt, phase, weights)
+            # Policy Translation: Create weight + goal for DMP
+            if self.dmp_dt_model is None:
+                self.dmp_dt_model = dmp_dt_torch(ptgloabl_units=self.ptgloabl_units, units=self.units)
+                self.dmp_dt_model.build_dmp_dt_model(cfeatures)
+            #print(f'cfeatures: {cfeatures.shape}')
+
+            dmp_dt = self.dmp_dt_model.dmp_model(inpt = cfeatures, use_dropout=False)
+            #print(f'dmp_dt: {dmp_dt}')
+            if (len(inputs) > 3) and (inputs[3] is not None): #inputs includes Last_GRU_State
+                last_gru_state = inputs[3]
+            else:
+                #last_gru_state = torch.zeros((batch_size, self.units), dtype=torch.float32, device=dmp_dt.device)
+                last_gru_state = None
+
+            # Run the low-level controller
+            initial_state = [
+                start_joints,
+                last_gru_state
+            ]
+            generated, phase, weights, last_gru_state = self.controller.forward(seq_inputs=robot, states=initial_state, constants=(cfeatures, dmp_dt), training=training)
+
+            if return_cfeature:
+                return generated, (atn, dmp_dt, phase, weights, cfeatures, last_gru_state)
+            else:
+                return generated, (atn, dmp_dt, phase, weights)
     
     def getVariables(self, step=None):
         return self.parameters()

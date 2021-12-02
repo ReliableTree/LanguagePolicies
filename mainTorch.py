@@ -17,7 +17,7 @@ import sys
 
 
 # Learning rate for the adam optimizer
-LEARNING_RATE   = 0.0001
+LEARNING_RATE   = 0.0003
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
@@ -53,7 +53,7 @@ def init_weights(network):
         elif 'weight' in para_name:
             torch.nn.init.orthogonal_(para)
 
-def setupModel(device = 'cuda', batch_size = 16, path_dict = None, logname = None, model_path=None):
+def setupModel(device = 'cuda', batch_size = 100, path_dict = None, logname = None, model_path=None):
     print("  --> Running with default settings")
     model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], use_LSTM=False).to(device)
     #print(path_dict['TRAIN_DATA_TORCH'])
@@ -97,7 +97,7 @@ if __name__ == '__main__':
 
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
-        network = setupModel(device='cuda', batch_size = 16, path_dict = path_dict, logname=logname, model_path=model_path)
+        network = setupModel(device='cuda', batch_size = 32, path_dict = path_dict, logname=logname, model_path=model_path)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 

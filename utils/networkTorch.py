@@ -2,6 +2,7 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 from os import path
+from pickle import NONE
 import tensorflow as tf
 import sys
 import numpy as np
@@ -87,11 +88,15 @@ class NetworkTorch(nn.Module):
     
     
     def torch2tf(self, inpt):
-        return tf.convert_to_tensor(inpt.detach().cpu().numpy())
-
+        if inpt is not None:
+            return tf.convert_to_tensor(inpt.detach().cpu().numpy())
+        else:
+            return None
     def tf2torch(self, inpt):
-        return torch.tensor(inpt.numpy(), device= self.device)
-
+        if inpt is not None:
+            return torch.tensor(inpt.numpy(), device= self.device)
+        else:
+            return None
     def runValidation(self, quick=False, pnt=True): 
         if not quick:
             print("Running full validation...")
@@ -118,13 +123,17 @@ class NetworkTorch(nn.Module):
 
     def step(self, d_in, d_out, train):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
+        if not train:
+            self.model.eval()
         result = self.model(d_in, training=train, gt_attention = attention)
+        if not train:
+            self.model.train()
         loss, (atn, trj, dt, phs, wght, rel_obj) = self.calculateLoss(d_out, result, train)
 
 
         if train:
             if not self.optimizer:
-                self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999)) 
+                self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
                 #self.optimizer = torch.optim.SGD(params=self.model.parameters(), lr=self.lr) 
                 self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 1.0, gamma=self.gamma_sl)
             #print(f'num parametrs in model: {len(list(self.model.parameters()))}')
@@ -186,8 +195,12 @@ class NetworkTorch(nn.Module):
         return nn.NLLLoss()(torch.log(y_pred), y_labels_args)
 
     def calculateLoss(self, d_out, result, train):
-        gen_trj, (atn, dmp_dt, phs, wght)                       = result
         generated, attention, delta_t, weights, phase, loss_atn = d_out
+        if len(result) == 2:
+            gen_trj, atn                                        = result
+
+        else:
+            gen_trj, (atn, dmp_dt, phs, wght)                       = result
 
         weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
         
@@ -198,23 +211,27 @@ class NetworkTorch(nn.Module):
 
         rel_correct_objects = (torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()/len(atn)
 
-        dt_loss = self.mse_loss(delta_t, dmp_dt[:,0]).mean()
+        if not len(result) == 2:
+            dt_loss = self.mse_loss(delta_t, dmp_dt[:,0]).mean()
+            phs_loss = self.calculateMSEWithPaddingMask(phase, phs[:,:,0], loss_atn).mean()
+            #TODO why :-1?'''
+            weight_loss = nn.MSELoss(reduction='none')(wght[:,:-1,:,:], wght[:,:-1,:,:].roll(shifts = -1, dims = 1)).mean((-2,-1))
+            weight_loss = (weight_loss * loss_atn[:,:-1]).mean()
 
         repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
         trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim)
         trj_loss = (trj_loss * loss_atn).mean()
    
-        phs_loss = self.calculateMSEWithPaddingMask(phase, phs[:,:,0], loss_atn).mean()
-        #TODO why :-1?'''
-        weight_loss = nn.MSELoss(reduction='none')(wght[:,:-1,:,:], wght[:,:-1,:,:].roll(shifts = -1, dims = 1)).mean((-2,-1))
-        weight_loss = (weight_loss * loss_atn[:,:-1]).mean()
-        return (atn_loss * self.lw_atn +
-                trj_loss * self.lw_trj +
-                phs_loss * self.lw_phs +
-                weight_loss * self.lw_w + 
-                dt_loss  * self.lw_dt,
-                (atn_loss, trj_loss, dt_loss, phs_loss, weight_loss, rel_correct_objects)
-            )
+        if len(result) == 2:
+            return atn_loss * self.lw_atn + trj_loss * self.lw_trj, (atn_loss, trj_loss, trj_loss, trj_loss, trj_loss, rel_correct_objects)
+        else:
+            return (atn_loss * self.lw_atn +
+                    trj_loss * self.lw_trj +
+                    phs_loss * self.lw_phs +
+                    weight_loss * self.lw_w + 
+                    dt_loss  * self.lw_dt,
+                    (atn_loss, trj_loss, dt_loss, phs_loss, weight_loss, rel_correct_objects)
+                )
     
     def loadingBar(self, count, total, size, addition="", end=False):
         if total == 0:
@@ -231,8 +248,19 @@ class NetworkTorch(nn.Module):
     def createGraphs(self, d_in, d_out, result):
         language, image, robot_states            = d_in
         target_trj, attention, delta_t, weights  = d_out
-        gen_trj, (atn, dmp_dt, phase, wght)      = result
+        if len(result[1]) == 4:
+            gen_trj, (atn, dmp_dt, phase, wght)      = result
+        else:
+            gen_trj, atn = result
+            phase = None
+            dmp_dt = None
+
 
         self.tboard.plotClassAccuracy(attention, self.tf2torch(tf.math.reduce_mean(self.torch2tf(atn), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(atn), axis=0)), self.tf2torch(self.torch2tf(language)), stepid=self.global_step)
-        self.tboard.plotDMPTrajectory(target_trj, self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(gen_trj), axis=0)),
-                                      self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0)), delta_t, self.tf2torch(tf.math.reduce_mean(self.torch2tf(dmp_dt), axis=0)), stepid=self.global_step)
+        if len(result[1]) == 4:
+            self.tboard.plotDMPTrajectory(target_trj, self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(gen_trj), axis=0)),
+                                        self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0)), delta_t, self.tf2torch(tf.math.reduce_mean(self.torch2tf(dmp_dt), axis=0)), stepid=self.global_step)
+        else:
+            self.tboard.plotDMPTrajectory(target_trj, self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(gen_trj), axis=0)),
+                                        None, delta_t, None, stepid=self.global_step)
+

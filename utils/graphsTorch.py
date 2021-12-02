@@ -197,20 +197,22 @@ class TBoardGraphsTorch():
         
         return result
 
-    def plotDMPTrajectory(self, y_true, y_pred, y_pred_std, phase, dt, p_dt, stepid):
+    def plotDMPTrajectory(self, y_true, y_pred, y_pred_std= None, phase= None, dt= None, p_dt= None, stepid= None):
         tf_y_true = self.torch2tf(y_true)
         tf_y_pred = self.torch2tf(y_pred)
         tf_y_pred_std = self.torch2tf(y_pred_std)
-        tf_phase = self.torch2tf(phase)
-        tf_dt = self.torch2tf(dt)
-        tf_p_dt = self.torch2tf(p_dt)
+        if phase is not None:
+            tf_phase = self.torch2tf(phase)
+            tf_dt = self.torch2tf(dt)
+            tf_p_dt = self.torch2tf(p_dt)
 
         tf_y_true      = tf_y_true.numpy()
         tf_y_pred      = tf_y_pred.numpy()
         tf_y_pred_std  = tf_y_pred_std.numpy()
-        tf_phase       = tf_phase.numpy()
-        tf_dt          = tf_dt.numpy() * 350.0
-        tf_p_dt        = tf_p_dt.numpy()
+        if phase is not None:
+            tf_phase       = tf_phase.numpy()
+            tf_dt          = tf_dt.numpy() * 350.0
+            tf_p_dt        = tf_p_dt.numpy()
         trj_len      = tf_y_true.shape[0]
         
         fig, ax = plt.subplots(3,3)
@@ -225,12 +227,14 @@ class TBoardGraphsTorch():
             ax[idx,idy].plot(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], alpha=0.75, color='mediumslateblue')
             ax[idx,idy].errorbar(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], xerr=None, yerr=tf_y_pred_std[:,sp], alpha=0.25, fmt='none', color='mediumslateblue')
             ax[idx,idy].set_ylim([-0.1, 1.1])
-            ax[idx,idy].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
+            if phase is not None:
+                ax[idx,idy].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
         
-        ax[2,2].plot(range(tf_y_pred.shape[0]), tf_phase[:,0], color='orange')
-        ax[2,2].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
-        ax[2,2].plot([tf_p_dt*350.0, tf_p_dt*350.0], [0.0,1.0], linestyle=":", color='mediumslateblue')
-        ax[2,2].set_ylim([-0.1, 1.1])
+        if phase is not None:
+            ax[2,2].plot(range(tf_y_pred.shape[0]), tf_phase[:,0], color='orange')
+            ax[2,2].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
+            ax[2,2].plot([tf_p_dt*350.0, tf_p_dt*350.0], [0.0,1.0], linestyle=":", color='mediumslateblue')
+            ax[2,2].set_ylim([-0.1, 1.1])
 
         result = np.expand_dims(self.finishFigure(fig), 0)
         plt.close()
