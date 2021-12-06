@@ -2,14 +2,9 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 import tensorflow as tf
-import tensorflow_probability as tfp
 import sys
 import numpy as np
 from utils.graphs import TBoardGraphs
-import shutil
-import pycurl
-import pickle
-import os
 
 class Network():
     def __init__(self, model, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25):
