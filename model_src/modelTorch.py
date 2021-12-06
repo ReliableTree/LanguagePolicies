@@ -159,7 +159,8 @@ class PolicyTranslationModelTorch(nn.Module):
             #print(f'inpt_seq: {inpt_seq.shape}')
 
             if self.controller_transformer is None:
-                self.controller_transformer = ControllerTransformer(ntoken=53, d_output=7, d_model=42, nhead=1, d_hid=42, nlayers=1).to(inpt_seq.device)
+                #d_output = 8, 1:7 = robot, 8 = phase 
+                self.controller_transformer = ControllerTransformer(ntoken=53, d_output=8, d_model=42, nhead=1, d_hid=42, nlayers=1).to(inpt_seq.device)
                 self.trans_seq_len = max(inpt_seq.size(1), 350)
                 self.src_mask = generate_square_subsequent_mask(self.trans_seq_len).to(inpt_seq.device)
             if inpt_seq.size(1) != self.trans_seq_len:
@@ -167,13 +168,13 @@ class PolicyTranslationModelTorch(nn.Module):
             else:
                 src_mask = self.src_mask
 
-            generated = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask)  #350x16x7
+            generated = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask)  #350x16x8
             #print(f'generated before: {generated.shape}')
 
-            generated = generated.transpose(0,1)                              #16x350x7
+            generated = generated.transpose(0,1)                              #16x350x8
             #print(f'generated after: {generated.shape}')
 
-            return generated, atn
+            return generated[:,:,:7], atn, generated[:,:,7]
 
         else:
             start_joints  = robot[:,0,:]

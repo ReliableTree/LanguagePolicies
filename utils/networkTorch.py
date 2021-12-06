@@ -197,8 +197,8 @@ class NetworkTorch(nn.Module):
 
     def calculateLoss(self, d_out, result, train):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
-        if len(result) == 2:
-            gen_trj, atn                                        = result
+        if len(result) == 3:
+            gen_trj, atn, phs                                       = result
 
         else:
             gen_trj, (atn, dmp_dt, phs, wght)                       = result
@@ -218,22 +218,21 @@ class NetworkTorch(nn.Module):
         print(f'abs correct: {(torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()}')'''
 
         rel_correct_objects = (torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()/len(atn)
-
-        if not len(result) == 2:
+        if not len(result) == 3:
             dt_loss = self.mse_loss(delta_t, dmp_dt[:,0]).mean()
-            phs_loss = self.calculateMSEWithPaddingMask(phase, phs[:,:,0], loss_atn).mean()
             #TODO why :-1?'''
             weight_loss = nn.MSELoss(reduction='none')(wght[:,:-1,:,:], wght[:,:-1,:,:].roll(shifts = -1, dims = 1)).mean((-2,-1))
             weight_loss = (weight_loss * loss_atn[:,:-1]).mean()
 
         repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
+        phs_loss = (nn.MSELoss(-1)(phase, phs)).mean()
         trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim)
         if not len(result) == 2:
             trj_loss = (trj_loss * loss_atn).mean()
         else:
             trj_loss = trj_loss.mean()
-        if len(result) == 2:
-            return atn_loss * self.lw_atn + trj_loss * self.lw_trj, (atn_loss, trj_loss, trj_loss, trj_loss, trj_loss, rel_correct_objects)
+        if len(result) == 3:
+            return atn_loss * self.lw_atn + trj_loss * self.lw_trj, (atn_loss, trj_loss, trj_loss, phs_loss, trj_loss, rel_correct_objects)
         else:
             return (atn_loss * self.lw_atn +
                     trj_loss * self.lw_trj +
@@ -261,8 +260,8 @@ class NetworkTorch(nn.Module):
         if len(result[1]) == 4:
             gen_trj, (atn, dmp_dt, phase, wght)      = result
         else:
-            gen_trj, atn = result
-            phase = None
+            gen_trj, atn, phase = result
+
             dmp_dt = None
 
 
@@ -271,6 +270,8 @@ class NetworkTorch(nn.Module):
             self.tboard.plotDMPTrajectory(target_trj, self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(gen_trj), axis=0)),
                                         self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0)), delta_t, self.tf2torch(tf.math.reduce_mean(self.torch2tf(dmp_dt), axis=0)), stepid=self.global_step)
         else:
-            self.tboard.plotDMPTrajectory(target_trj, self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(gen_trj), axis=0)),
-                                        None, delta_t, None, stepid=self.global_step)
+            gen_tr_trj= self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0))
+            gen_tr_phase = self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0))
+            self.tboard.plotDMPTrajectory(target_trj, gen_tr_trj, gen_tr_trj,
+                                        gen_tr_phase, delta_t, None, stepid=self.global_step)
 
