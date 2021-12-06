@@ -101,7 +101,7 @@ if __name__ == '__main__':
 
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
-        network = setupModel(device=device, batch_size = 32, path_dict = path_dict, logname=logname, model_path=model_path)
+        network = setupModel(device=device, batch_size = 200, path_dict = path_dict, logname=logname, model_path=model_path)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 
