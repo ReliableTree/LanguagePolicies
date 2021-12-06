@@ -53,9 +53,9 @@ class PolicyTranslationModelTorch(nn.Module):
         self.embedding = GloveEmbeddings(file_path=glove_path)
         if use_lang_transformer:
             self.lang_trans  = None
-            self.trans_d_hid = 42
-            self.nhead       = 1
-            self.nlayers     = 1
+            self.trans_d_hid = 200
+            self.nhead       = 4
+            self.nlayers     = 2
             self.transformer_seq_embedding = None
         else:
             self.lng_gru   = None
