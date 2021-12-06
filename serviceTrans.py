@@ -223,8 +223,8 @@ class NetworkService():
 
         self.history.append(list(req.robot)) 
 
-        #robot           = np.asarray(self.history, dtype=np.float32)
-        robot           = np.asarray([list(req.robot)], dtype=np.float32)
+        robot           = np.asarray(self.history, dtype=np.float32)
+        #robot           = np.asarray([list(req.robot)], dtype=np.float32)
         self.input_data = (
             torch.tensor(np.tile([self.language],[250, 1]), dtype=torch.int64, device=self.device), 
             torch.tensor(np.tile([self.features],[250, 1, 1]), dtype=torch.float32, device=self.device),
@@ -234,50 +234,34 @@ class NetworkService():
         #HENDRIK
         h = time.perf_counter()
         with torch.no_grad():
-            generated, (atn, dmp_dt, phase, weights, cfeatures, last_GRU_state) = self.model(self.input_data, training=False, use_dropout=True, node = self.node, return_cfeature = True)
+            generated, atn = self.model(self.input_data, training=False, use_dropout=True, node = self.node, return_cfeature = False)
+        phase = len(self.history)/340
         print(f'time for one call: {time.perf_counter() - h}')
-        print(f'phase value: {phase[-1,0]}')
+        print(f'phase value: {phase}')
         print(f'atn : {atn}')
-        self.last_GRU_state = last_GRU_state
         self.trj_gen    = generated.mean(axis=0).cpu().numpy()
-        self.timesteps  = int(dmp_dt.mean(axis=0).cpu().numpy() * 500)
-        self.b_weights  = (weights).mean(axis=0).cpu().numpy()
+        print(f'trj_gen: {self.trj_gen.shape}')
 
-        phase_value     = phase.mean(axis=0).cpu().numpy()
-        phase_value     = phase_value[-1,0]
+        phase_value     = phase
 
-        self.sfp_history.append(self.b_weights[-1,:,:])
         if phase_value > 0.95 and len(self.sfp_history) > 100:
-            trj_len    = len(self.sfp_history)
-            basismodel = GaussianModel(degree=11, scale=0.012, observed_dof_names=("Base","Shoulder","Ellbow","Wrist1","Wrist2","Wrist3","Gripper"))
-            domain     = np.linspace(0, 1, trj_len, dtype=np.float64)
-            trajectories = []
-            for i in range(trj_len):
-                trajectories.append(np.asarray(basismodel.apply_coefficients(domain, self.sfp_history[i].flatten())))
-            trajectories = np.asarray(trajectories)
-            np.save("trajectories", trajectories)
             np.save("history", self.history)
 
             gen_trajectory = []
-            var_trj        = np.zeros((trj_len, trj_len, 7), dtype=np.float32)
-            for w in range(trj_len):
-                gen_trajectory.append(trajectories[w,w,:])
             gen_trajectory = np.asarray(gen_trajectory)
             np.save("gen_trajectory", gen_trajectory)     
             dict_of_features = {
                 'prompt' : str(req.language),
-                'cfeatures' : cfeatures[0].cpu().numpy(),
+                #'cfeatures' : cfeatures[0].cpu().numpy(),
                 'attn' : atn.cpu().numpy(),
                 'features' : self.features
             }
             save_dict_of_features(dict_of_features, str(req.language))
 
             #save_cfeature(cfeatures[0].numpy(), str(req.language))
-
-            self.sfp_history = []
         
         self.req_step += 1
-        return (self.trj_gen.flatten().tolist(), [0.], self.timesteps, self.b_weights.flatten().tolist(), float(phase_value)) 
+        return (self.trj_gen.flatten().tolist(), [0.], 0, [0.], float(phase_value)) 
     
     def idToText(self, id):
         names = ["", "Yellow Small Round", "Red Small Round", "Green Small Round", "Blue Small Round", "Pink Small Round",

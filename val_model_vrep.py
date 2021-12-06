@@ -438,6 +438,7 @@ class Simulator(object):
         return successfull, val_data
 
     def write_success_in_cfeature_dict(self, promt, success):
+            return
             dict_of_features = load_obj('dict_of_features')
             # dict_of_features = {'prompt' : [{feature1 : data, ...}, {feature1 : data, ..}], ...} #for every promt, the resulting features are saved in a dict. The dicts are saved in a list where the last element is the last run
             dict_of_prompt = dict_of_features[promt][-1] 

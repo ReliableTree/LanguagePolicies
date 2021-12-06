@@ -137,6 +137,7 @@ class PolicyTranslationModelTorch(nn.Module):
             main_obj = torch.argmax(atn, dim=-1)
         else:
             main_obj = torch.argmax(gt_attention, dim=-1) 
+        #print(f'atn.shape, {atn.shape}')
 
         counter = torch.arange(features.size(0))
         cfeatures_max = obj_feature_embedding[(counter, main_obj)]           #16x5
@@ -152,7 +153,7 @@ class PolicyTranslationModelTorch(nn.Module):
         if self.use_controller_transformer:
             cfeatures = torch.cat((cfeatures_max, language), axis=1)   #16x46
             #print(f'cfeatures after cat: {cfeatures.shape}')
-            cfeatures = cfeatures.unsqueeze(1).repeat(1,350,1)         #16x350x46
+            cfeatures = cfeatures.unsqueeze(1).repeat(1,robot.size(1),1)         #16x350x46
             #print(f'cfeatures after repeat: {cfeatures.shape}')
             inpt_seq = torch.cat((cfeatures, robot), dim = -1)          #16x350x53
             #print(f'inpt_seq: {inpt_seq.shape}')
@@ -160,10 +161,13 @@ class PolicyTranslationModelTorch(nn.Module):
             if self.controller_transformer is None:
                 self.controller_transformer = ControllerTransformer(ntoken=53, d_output=7, d_model=42, nhead=1, d_hid=42, nlayers=1).to(inpt_seq.device)
                 self.trans_seq_len = max(inpt_seq.size(1), 350)
-                self.src_mask = src_mask = generate_square_subsequent_mask(self.trans_seq_len).to(inpt_seq.device)
+                self.src_mask = generate_square_subsequent_mask(self.trans_seq_len).to(inpt_seq.device)
             if inpt_seq.size(1) != self.trans_seq_len:
-                src_mask = src_mask[:inpt_seq.size(1), :inpt_seq.size(1)]
-            generated = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = self.src_mask)  #350x16x7
+                src_mask = self.src_mask[:inpt_seq.size(1), :inpt_seq.size(1)]
+            else:
+                src_mask = self.src_mask
+
+            generated = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask)  #350x16x7
             #print(f'generated before: {generated.shape}')
 
             generated = generated.transpose(0,1)                              #16x350x7

@@ -203,7 +203,8 @@ class NetworkTorch(nn.Module):
         else:
             gen_trj, (atn, dmp_dt, phs, wght)                       = result
 
-        weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
+        #weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
+        weight_dim  = torch.tensor([1.0, 1.0, 1.0, 1.0, 1, 1.0, 1.], device = generated.device)
         #print(f'attention: {attention}')
         #print(f'atn: {atn}')
         #print(f'tupe attention: {attention.dtype}')
@@ -227,8 +228,10 @@ class NetworkTorch(nn.Module):
 
         repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
         trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim)
-        trj_loss = (trj_loss * loss_atn).mean()
-   
+        if not len(result) == 2:
+            trj_loss = (trj_loss * loss_atn).mean()
+        else:
+            trj_loss = trj_loss.mean()
         if len(result) == 2:
             return atn_loss * self.lw_atn + trj_loss * self.lw_trj, (atn_loss, trj_loss, trj_loss, trj_loss, trj_loss, rel_correct_objects)
         else:
