@@ -10,6 +10,7 @@ from model_src.attentionTorch import TopDownAttentionTorch
 from model_src.glove import GloveEmbeddings
 from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
 from model_src.controllerTransformer import ControllerTransformer
+from model_src.transformerAttention import TransformerAttention
 
 from utils.Transformer import TransformerModel
 from utils.Transformer import generate_square_subsequent_mask
@@ -23,7 +24,7 @@ from os import path, makedirs
 
 
 class PolicyTranslationModelTorch(nn.Module):
-    def __init__(self, od_path, glove_path, use_LSTM = False, use_lang_transformer = True, use_controller_transformer = True, use_obj_embedding = True):
+    def __init__(self, od_path, glove_path, use_LSTM = False, use_lang_transformer = True, use_controller_transformer = True, use_obj_embedding = True, use_attn_transformer = True):
         super().__init__()
         self.units               = 32
         self.output_dims         = 7
@@ -32,6 +33,8 @@ class PolicyTranslationModelTorch(nn.Module):
         self.use_lang_trans      = use_lang_transformer
         self.use_controller_transformer = use_controller_transformer
         self.use_obj_embedding = use_obj_embedding
+        self.use_attn_transformer = use_attn_transformer
+
 
         if od_path != "":                
             od_path    = pathlib.Path(od_path)/"saved_model" 
@@ -41,18 +44,22 @@ class PolicyTranslationModelTorch(nn.Module):
 
         if use_obj_embedding:
             self.obj_embedding = None
+        if use_attn_transformer:
+            self.attention = None
+        else:
+            self.attention = TopDownAttentionTorch(units=64)
+
 
         self.embedding = GloveEmbeddings(file_path=glove_path)
         if use_lang_transformer:
             self.lang_trans  = None
-            self.trans_d_hid = 200
+            self.trans_d_hid = 42
             self.nhead       = 1
-            self.nlayers     = 2
+            self.nlayers     = 1
             self.transformer_seq_embedding = None
         else:
             self.lng_gru   = None
 
-        self.attention = TopDownAttentionTorch(units=64)
 
         self.dout      = nn.Dropout(p=0.25)
 
@@ -116,18 +123,24 @@ class PolicyTranslationModelTorch(nn.Module):
         # dmp_state  = inputs[3]
 
         # Calculate attention and expand it to match the feature size
-        atn = self.attention((language, features))
+        if self.use_obj_embedding:
+            if self.obj_embedding is None:
+                self.obj_embedding = nn.Embedding(30, 10).to(robot.device)
+        
+        obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))   #16x10
+        obj_feature_embedding = torch.cat((features[:,:,1:], obj_feature_embedding), dim = -1)
+
+        if self.attention is None and self.use_attn_transformer:
+            self.attention = TransformerAttention(device = robot.device)
+        atn = self.attention((language, obj_feature_embedding))
         if gt_attention is None:
             main_obj = torch.argmax(atn, dim=-1)
         else:
             main_obj = torch.argmax(gt_attention, dim=-1) 
+
         counter = torch.arange(features.size(0))
-        cfeatures_max = features[(counter, main_obj)]           #16x5
-        if self.use_obj_embedding:
-            if self.obj_embedding is None:
-                self.obj_embedding = nn.Embedding(30, 10).to(robot.device)
-            obj_feature_embedding = self.obj_embedding(cfeatures_max[:,0].to(dtype=torch.int32))   #16x10
-            cfeatures_max = torch.cat((cfeatures_max[:,1:], obj_feature_embedding), dim = -1)
+        cfeatures_max = obj_feature_embedding[(counter, main_obj)]           #16x5
+
         '''atn_w = atn.unsqueeze(2)
         atn_w = atn_w.repeat([1,1,5])
         # Compress image features and apply attention
@@ -145,7 +158,7 @@ class PolicyTranslationModelTorch(nn.Module):
             #print(f'inpt_seq: {inpt_seq.shape}')
 
             if self.controller_transformer is None:
-                self.controller_transformer = ControllerTransformer(ntoken=53, d_output=7, d_model=200, nhead=2, d_hid=200, nlayers=2).to(inpt_seq.device)
+                self.controller_transformer = ControllerTransformer(ntoken=53, d_output=7, d_model=42, nhead=1, d_hid=42, nlayers=1).to(inpt_seq.device)
                 self.trans_seq_len = max(inpt_seq.size(1), 350)
                 self.src_mask = src_mask = generate_square_subsequent_mask(self.trans_seq_len).to(inpt_seq.device)
             if inpt_seq.size(1) != self.trans_seq_len:

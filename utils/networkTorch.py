@@ -6,6 +6,7 @@ from pickle import NONE
 import tensorflow as tf
 import sys
 import numpy as np
+from torch._C import dtype
 from utils.graphsTorch import TBoardGraphsTorch
 import tensorflow as tf
 
@@ -134,7 +135,7 @@ class NetworkTorch(nn.Module):
         if train:
             if not self.optimizer:
                 self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
-                #self.optimizer = torch.optim.SGD(params=self.model.parameters(), lr=self.lr) 
+                #self.optimizer = torch.optim.SGD(params=self.model.parameters(), lr=self.lr, weight_decay=1e-2) 
                 self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 1.0, gamma=self.gamma_sl)
             #print(f'num parametrs in model: {len(list(self.model.parameters()))}')
 
@@ -203,8 +204,14 @@ class NetworkTorch(nn.Module):
             gen_trj, (atn, dmp_dt, phs, wght)                       = result
 
         weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
-        
-        atn_loss = self.catCrossEntrLoss(attention, atn)
+        #print(f'attention: {attention}')
+        #print(f'atn: {atn}')
+        #print(f'tupe attention: {attention.dtype}')
+        #print(f'type atn: {atn.dtype}')
+        #atn_loss = nn.CrossEntropyLoss()(atn, torch.argmax(attention, dim = -1))
+        atn_loss = nn.CrossEntropyLoss()(atn, attention.to(dtype=torch.float32))
+
+        #atn_loss = self.catCrossEntrLoss(attention, atn)
         '''print(f'gt attention argmax: {torch.argmax(attention, dim=-1)}')
         print(f'attention argmax: {torch.argmax(atn, dim=-1)}')
         print(f'abs correct: {(torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()}')'''
