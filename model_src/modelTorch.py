@@ -53,9 +53,9 @@ class PolicyTranslationModelTorch(nn.Module):
         self.embedding = GloveEmbeddings(file_path=glove_path)
         if use_lang_transformer:
             self.lang_trans  = None
-            self.trans_d_hid = 304
-            self.nhead       = 8
-            self.nlayers     = 4
+            self.trans_d_hid = 42
+            self.nhead       = 1
+            self.nlayers     = 1
             self.transformer_seq_embedding = None
         else:
             self.lng_gru   = None
@@ -84,7 +84,7 @@ class PolicyTranslationModelTorch(nn.Module):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
 
 
-    def forward(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False, gt_attention = None, train_embedding = True):
+    def forward(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False, gt_attention = None, train_embedding = True, return_gen_gen=False):
         if training:
             use_dropout = True
             gt_attention = None
@@ -164,7 +164,8 @@ class PolicyTranslationModelTorch(nn.Module):
 
             if self.controller_transformer is None:
                 #d_output = 8, 1:7 = robot, 8 = phase 
-                self.controller_transformer = ControllerTransformer(ntoken=53, d_output=8, d_model=42, nhead=1, d_hid=42, nlayers=1).to(inpt_seq.device)
+                d_model = 304
+                self.controller_transformer = ControllerTransformer(ntoken=53, d_output=8, d_model=d_model, nhead=8, d_hid=d_model, nlayers=4).to(inpt_seq.device)
                 self.trans_seq_len = max(inpt_seq.size(1), 350)
                 self.src_mask = generate_square_subsequent_mask(self.trans_seq_len).to(inpt_seq.device)
             if inpt_seq.size(1) != self.trans_seq_len:
@@ -172,12 +173,21 @@ class PolicyTranslationModelTorch(nn.Module):
             else:
                 src_mask = self.src_mask
 
-            generated = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask)  #350x16x8
-            #print(f'generated before: {generated.shape}')
+            #result from gt:
+            generated_from_gt = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask)  #350x16x8
+            generated_from_gt = generated_from_gt.transpose(0,1)                              #16x350x8
 
-            generated = generated.transpose(0,1)                              #16x350x8
-            #print(f'generated after: {generated.shape}')
-            return generated[:,:,:7], atn, generated[:,:,7]
+            #result from generated:
+            if return_gen_gen:
+                with torch.no_grad():
+                    generated_for_generation = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask).transpose(0,1)      #350x16x8
+
+                generated_trj_for_generation = generated_for_generation[:,:,:7]
+                inpt_seq_generated = torch.cat((cfeatures, generated_trj_for_generation), dim = -1)
+                generated_from_generated = self.controller_transformer(inpt_seq_generated.transpose(0,1), src_mask = src_mask).transpose(0,1) 
+                return generated_from_gt[:,:,:7], generated_from_generated[:,:,:7], atn, generated_from_generated[:,:,7]
+            else:
+                return generated_from_gt[:,:,:7], atn, generated_from_gt[:,:,7]
 
         else:
             start_joints  = robot[:,0,:]

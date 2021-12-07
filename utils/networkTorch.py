@@ -15,7 +15,7 @@ import torch.nn as nn
 import time
 
 class NetworkTorch(nn.Module):
-    def __init__(self, model, data_path, logname, lr, lw_atn, lw_w, lw_trj, lw_dt, lw_phs, log_freq=25, gamma_sl = 0.995, device = 'cuda'):
+    def __init__(self, model, data_path, logname, lr, lw_atn, lw_w, lw_trj, lw_gen_trj, lw_dt, lw_phs, lw_fod, log_freq=25, gamma_sl = 0.995, device = 'cuda', use_transformer = True):
         super().__init__()
         self.optimizer         = None
         self.model             = model
@@ -24,6 +24,7 @@ class NetworkTorch(nn.Module):
         self.lr = lr
         self.device = device
         self.data_path = data_path
+        self.use_transformer = use_transformer
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -42,6 +43,8 @@ class NetworkTorch(nn.Module):
         self.lw_trj = lw_trj
         self.lw_dt  = lw_dt
         self.lw_phs = lw_phs
+        self.lw_fod = lw_fod
+        self.lw_gen_trj = lw_gen_trj
 
         self.mse_loss = nn.MSELoss()
         self.ce_loss = nn.CrossEntropyLoss()
@@ -57,17 +60,19 @@ class NetworkTorch(nn.Module):
         self.train_ds = train_loader
         self.val_ds   = val_loader
 
-    def train(self, epochs):
+    def train(self, epochs, use_transformer):
         self.global_step = 0
         for epoch in range(epochs):
             rel_epoch = epoch/epochs
             print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
             validation_loss = 0.0
             train_loss = []
+            teb = rel_epoch < 0.3
+            print(f'train ambedding: {teb}')
             for step, (d_in, d_out) in enumerate(self.train_ds):
                 if step % 100 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False)                    
-                train_loss.append(self.step(d_in, d_out, train=True, train_embedding=(rel_epoch < 0.3)))
+                train_loss.append(self.step(d_in, d_out, train=True, train_embedding=teb))
                 
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
@@ -107,13 +112,12 @@ class NetworkTorch(nn.Module):
             val_loss.append(self.step(d_in, d_out, train=False))
             if quick:
                 break
-        #TODO
         in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[50,1]))
         in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[50,1,1]))
         in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[50,1,1]))
         d_in_graphs  = (in0, in1, in2)
-        out_model = self.model(d_in_graphs, training=True, use_dropout=True)
-        out_model_tf = [self.torch2tf(out_model[0]), [self.torch2tf(ele) for ele in out_model[1]]]
+        out_model = self.model(d_in_graphs, training=True, use_dropout=True, return_gen_gen=True)
+        #out_model_tf = [self.torch2tf(out_model[0]), [self.torch2tf(ele) for ele in out_model[1]]]
         #d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
         #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
         self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
@@ -127,7 +131,7 @@ class NetworkTorch(nn.Module):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
         if not train:
             self.model.eval()
-        result = self.model(d_in, training=train, gt_attention = attention, train_embedding=train_embedding)
+        result = self.model(d_in, training=train, gt_attention = attention, train_embedding=train_embedding, return_gen_gen = True)
         if not train:
             self.model.train()
         loss, (atn, trj, dt, phs, wght, rel_obj) = self.calculateLoss(d_out, result, train)
@@ -199,48 +203,41 @@ class NetworkTorch(nn.Module):
 
     def calculateLoss(self, d_out, result, train):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
-        if len(result) == 3:
-            gen_trj, atn, phs                                       = result
+        if self.use_transformer:
+            gen_trj, gen_gen_trj, atn, phs                          = result
 
         else:
-            gen_trj, (atn, dmp_dt, phs, wght)                       = result
-        weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
-        #weight_dim  = torch.tensor([1.0, 1.0, 1.0, 1.0, 1, 1.0, 1.], device = generated.device)
-        #print(f'attention: {attention}')
-        #print(f'atn: {atn}')
-        #print(f'tupe attention: {attention.dtype}')
-        #print(f'type atn: {atn.dtype}')
-        #atn_loss = nn.CrossEntropyLoss()(atn, torch.argmax(attention, dim = -1))
-        #atn_loss = nn.CrossEntropyLoss()(atn, attention.to(dtype=torch.float32))
+            gen_trj, (atn, dmp_dt, phs, wght)                       = result  #gen trj = 32, 350, 7
+        #fod_loss = gen_trj
+        #weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
+        weight_dim  = torch.tensor([1.0, 1.0, 1.0, 1.0, 1, 1.0, 1.], device = generated.device)
 
         atn_loss = self.catCrossEntrLoss(attention, atn)
-        '''print(f'gt attention argmax: {torch.argmax(attention, dim=-1)}')
-        print(f'attention argmax: {torch.argmax(atn, dim=-1)}')
-        print(f'abs correct: {(torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()}')'''
 
+        fod_loss = nn.MSELoss()(gen_trj[:,1:], gen_trj[:, :-1])
         rel_correct_objects = (torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()/len(atn)
-        if not len(result) == 3:
+        if not self.use_transformer:
             dt_loss = self.mse_loss(delta_t, dmp_dt[:,0]).mean()
             #TODO why :-1?'''
             weight_loss = nn.MSELoss(reduction='none')(wght[:,:-1,:,:], wght[:,:-1,:,:].roll(shifts = -1, dims = 1)).mean((-2,-1))
             weight_loss = (weight_loss * loss_atn[:,:-1]).mean()
 
         repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
-        #print(f'phase: {phase.shape}')
-        #print(f'phs: {phs.shape}')
         phs_loss = self.calculateMSEWithPaddingMask(phase, phs.squeeze(), loss_atn).mean()
-        #phs_loss = (nn.MSELoss(-1)(phase, phs)).mean()
-        #print(f'generated shep: {generated.shape}')
-        trj_loss = ((generated- gen_trj)**2).mean()
-        trj_loss = trj_loss.mean()
-        #print(trj_loss)
+        #trj_loss = ((generated- gen_trj)**2).mean()
+        #trj_loss = trj_loss.mean()
         trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim)
-        if not len(result) == 2:
-            trj_loss = (trj_loss * loss_atn).mean()
-        else:
-            trj_loss = trj_loss.mean()
-        if len(result) == 3:
-            return atn_loss * self.lw_atn + trj_loss * self.lw_trj + phs_loss * self.lw_phs, (atn_loss, trj_loss, trj_loss, phs_loss, trj_loss, rel_correct_objects)
+        trj_gen_loss = self.calculateMSEWithPaddingMask(generated, gen_gen_trj, repeated_weight_dim)
+        trj_loss = (trj_loss * loss_atn).mean()
+        trj_gen_loss = (trj_gen_loss * loss_atn).mean()
+
+        if self.use_transformer:
+            return (atn_loss * self.lw_atn + 
+                    trj_loss * self.lw_trj + 
+                    trj_gen_loss * self.lw_gen_trj +
+                    phs_loss * self.lw_phs + 
+                    self.lw_fod * fod_loss, 
+                    (atn_loss, trj_loss, fod_loss, phs_loss, trj_gen_loss, rel_correct_objects))
         else:
             return (atn_loss * self.lw_atn +
                     trj_loss * self.lw_trj +
@@ -265,21 +262,26 @@ class NetworkTorch(nn.Module):
     def createGraphs(self, d_in, d_out, result):
         language, image, robot_states            = d_in
         target_trj, attention, delta_t, weights  = d_out
-        if len(result[1]) == 4:
+        if not self.use_transformer:
             gen_trj, (atn, dmp_dt, phase, wght)      = result
         else:
-            gen_trj, atn, phase = result
+            gen_trj, gen_gen_trj, atn, phase = result
 
             dmp_dt = None
 
 
         self.tboard.plotClassAccuracy(attention, self.tf2torch(tf.math.reduce_mean(self.torch2tf(atn), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(atn), axis=0)), self.tf2torch(self.torch2tf(language)), stepid=self.global_step)
-        if len(result[1]) == 4:
+        if not self.use_transformer:
             self.tboard.plotDMPTrajectory(target_trj, self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(gen_trj), axis=0)),
                                         self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0)), delta_t, self.tf2torch(tf.math.reduce_mean(self.torch2tf(dmp_dt), axis=0)), stepid=self.global_step)
         else:
             gen_tr_trj= self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0))
+            gen_gen_trj= self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_gen_trj), axis=0))
             gen_tr_phase = self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0))
-            self.tboard.plotDMPTrajectory(target_trj, gen_tr_trj, gen_tr_trj,
+            self.tboard.plotDMPTrajectory(target_trj, gen_tr_trj, torch.zeros_like(gen_tr_trj),
                                         gen_tr_phase, delta_t, None, stepid=self.global_step)
+            self.tboard.plotDMPTrajectory(target_trj, gen_gen_trj, torch.zeros_like(gen_gen_trj),
+                                        gen_tr_phase, delta_t, None, stepid=self.global_step, name='Gen - Trajectoy')
+
+                
 

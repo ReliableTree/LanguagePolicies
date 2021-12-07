@@ -24,12 +24,18 @@ WEIGHT_ATTN     = 1.0
 WEIGHT_W        = 50.0
 # Weight for the trajectroy generation loss
 WEIGHT_TRJ      = 50#5.0
+
+WEIGHT_GEN_TRJ  = 50
+
 # Weight for the time progression loss
 WEIGHT_DT       = 14.0
 # Weight for the phase prediction loss
 WEIGHT_PHS      = 50 #1.0
+
+WEIGHT_FOD      = 50
+
 # Number of epochs to train
-TRAIN_EPOCHS    = 200
+TRAIN_EPOCHS    = 8
 
 
 def count_parameters(model):
@@ -60,7 +66,7 @@ def setupModel(device = 'cuda', batch_size = 100, path_dict = None, logname = No
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     eval_data = TorchDataset(path = path_dict['VAL_DATA_TORCH'], device=device)
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
-    network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, gamma_sl = 1, device=device)
+    network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=WEIGHT_FOD, gamma_sl = 1, device=device)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
     network.setup_model()
@@ -71,7 +77,7 @@ def setupModel(device = 'cuda', batch_size = 100, path_dict = None, logname = No
 
     #print(f'number of param,eters in net: {len(list(network.parameters()))} and number of applied: {i}')
     #network.load_state_dict(torch.load(MODEL_PATH), strict=True)
-    network.train(epochs=TRAIN_EPOCHS)
+    network.train(epochs=TRAIN_EPOCHS, use_transformer=True)
     return network
 import os
 if __name__ == '__main__':
@@ -100,7 +106,7 @@ if __name__ == '__main__':
 
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
-        network = setupModel(device=device, batch_size = 32, path_dict = path_dict, logname=logname, model_path=model_path)
+        network = setupModel(device=device, batch_size = 16, path_dict = path_dict, logname=logname, model_path=model_path)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 

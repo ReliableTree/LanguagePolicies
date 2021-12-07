@@ -197,7 +197,7 @@ class TBoardGraphsTorch():
         
         return result
 
-    def plotDMPTrajectory(self, y_true, y_pred, y_pred_std= None, phase= None, dt= None, p_dt= None, stepid= None):
+    def plotDMPTrajectory(self, y_true, y_pred, y_pred_std= None, phase= None, dt= None, p_dt= None, stepid= None, name = "Trajectory"):
         tf_y_true = self.torch2tf(y_true)
         tf_y_pred = self.torch2tf(y_pred)
         tf_y_pred_std = self.torch2tf(y_pred_std)
@@ -241,4 +241,4 @@ class TBoardGraphsTorch():
         result = np.expand_dims(self.finishFigure(fig), 0)
         plt.close()
         with self.__tboard_validation.as_default():
-            tf.summary.image("Trajectory", data=result, step=stepid)
+            tf.summary.image(name, data=result, step=stepid)
