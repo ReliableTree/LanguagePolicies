@@ -134,7 +134,8 @@ class NetworkTorch(nn.Module):
 
         if train:
             if not self.optimizer:
-                self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
+                #self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
+                self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999)) 
                 #self.optimizer = torch.optim.SGD(params=self.model.parameters(), lr=self.lr, weight_decay=1e-2) 
                 self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 1.0, gamma=self.gamma_sl)
             #print(f'num parametrs in model: {len(list(self.model.parameters()))}')
