@@ -24,7 +24,7 @@ from os import path, makedirs
 
 
 class PolicyTranslationModelTorch(nn.Module):
-    def __init__(self, od_path, glove_path, use_LSTM = False, use_lang_transformer = True, use_controller_transformer = True, use_obj_embedding = True, use_attn_transformer = True):
+    def __init__(self, od_path, glove_path, use_LSTM = False, use_lang_transformer = False, use_controller_transformer = False, use_obj_embedding = False, use_attn_transformer = False):
         super().__init__()
         self.units               = 32
         self.output_dims         = 7
@@ -126,10 +126,10 @@ class PolicyTranslationModelTorch(nn.Module):
         if self.use_obj_embedding:
             if self.obj_embedding is None:
                 self.obj_embedding = nn.Embedding(30, 10).to(robot.device)
-        
-        obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))   #16x10
-        obj_feature_embedding = torch.cat((features[:,:,1:], obj_feature_embedding), dim = -1)
-
+            obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))   #16x10
+            obj_feature_embedding = torch.cat((features[:,:,1:], obj_feature_embedding), dim = -1)
+        else:
+            obj_feature_embedding = features
         if self.attention is None and self.use_attn_transformer:
             self.attention = TransformerAttention(device = robot.device)
         atn = self.attention((language, obj_feature_embedding))
@@ -173,7 +173,6 @@ class PolicyTranslationModelTorch(nn.Module):
 
             generated = generated.transpose(0,1)                              #16x350x8
             #print(f'generated after: {generated.shape}')
-
             return generated[:,:,:7], atn, generated[:,:,7]
 
         else:

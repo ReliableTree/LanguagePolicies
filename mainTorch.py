@@ -54,7 +54,6 @@ def init_weights(network):
             torch.nn.init.orthogonal_(para)
 
 def setupModel(device = 'cuda', batch_size = 100, path_dict = None, logname = None, model_path=None):
-    print("  --> Running with default settings")
     model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], use_LSTM=False).to(device)
     #print(path_dict['TRAIN_DATA_TORCH'])
     train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
@@ -66,7 +65,7 @@ def setupModel(device = 'cuda', batch_size = 100, path_dict = None, logname = No
 
     network.setup_model()
     if model_path is not None:
-        model.load_state_dict(torch.load(model_path))
+        model.load_state_dict(torch.load(model_path, map_location='cuda:0'))
     #init_weights(network)
     count_parameters(network)
 

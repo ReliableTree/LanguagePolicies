@@ -409,7 +409,7 @@ class Simulator(object):
             phase = 0.0
             self.last_gripper = 0.0
             th = 1.0
-            while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5):
+            while phase < th:# and cnt < int(gt_trajectory.shape[0] * 1.5):
                 state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
                 cnt += 1
                 tf_trajectory, phase = self.predictTrajectory(data["voice"], state, cnt)

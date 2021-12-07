@@ -30,7 +30,6 @@ FORCE_CPU    = True
 # Use dropout at run-time for stochastif-forward passes
 USE_DROPOUT  = True
 # Where can we find the trained model?
-MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/r0xGg7EJvnk/best/policy_translation_h'
 # Where is a pre-trained faster-rcnn?
 FRCNN_PATH   = "/home/hendrik/Documents/master_project/LokalData/GDrive/rcnn"
 # Where are the GloVe word embeddings?
@@ -64,8 +63,7 @@ TRAIN_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDatase
 
 VAL_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/val_data_torch.txt'
 
-MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/g5jjl2j8KLk/best/policy_translation_h'
-
+MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/DRLLXoQw10A/best/policy_translation_h'
 
 from torch.utils.data import DataLoader
 from utils.convertTFDataToPytorchData import TorchDataset
@@ -89,7 +87,7 @@ def setup_model(device = 'cpu', batch_size = 1000):
     network = NetworkTorch(model, data_path='/home/hendrik/Documents/master_project/LokalData', logname='LOGNAME', lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
     network.setup_model()
-    model.load_state_dict(torch.load(MODEL_PATH))
+    model.load_state_dict(torch.load(MODEL_PATH, map_location='cuda:0'))
     return model
 
 class NetworkService():
@@ -234,17 +232,18 @@ class NetworkService():
         #HENDRIK
         h = time.perf_counter()
         with torch.no_grad():
-            generated, atn = self.model(self.input_data, training=False, use_dropout=True, node = self.node, return_cfeature = False)
+            generated, atn, phase = self.model(self.input_data, training=False, use_dropout=True, node = self.node, return_cfeature = False)
         phase = len(self.history)/340
         print(f'time for one call: {time.perf_counter() - h}')
         print(f'phase value: {phase}')
-        print(f'atn : {atn}')
+        #print(f'atn : {atn}')
         self.trj_gen    = generated.mean(axis=0).cpu().numpy()
         print(f'trj_gen: {self.trj_gen.shape}')
 
         phase_value     = phase
 
-        if phase_value > 0.95 and len(self.sfp_history) > 100:
+        if (phase_value > 0.95):# and len(self.sfp_history) > 100:
+            print(f'phase value: {phase_value}')
             np.save("history", self.history)
 
             gen_trajectory = []

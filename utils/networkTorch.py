@@ -202,17 +202,16 @@ class NetworkTorch(nn.Module):
 
         else:
             gen_trj, (atn, dmp_dt, phs, wght)                       = result
-
-        #weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
-        weight_dim  = torch.tensor([1.0, 1.0, 1.0, 1.0, 1, 1.0, 1.], device = generated.device)
+        weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
+        #weight_dim  = torch.tensor([1.0, 1.0, 1.0, 1.0, 1, 1.0, 1.], device = generated.device)
         #print(f'attention: {attention}')
         #print(f'atn: {atn}')
         #print(f'tupe attention: {attention.dtype}')
         #print(f'type atn: {atn.dtype}')
         #atn_loss = nn.CrossEntropyLoss()(atn, torch.argmax(attention, dim = -1))
-        atn_loss = nn.CrossEntropyLoss()(atn, attention.to(dtype=torch.float32))
+        #atn_loss = nn.CrossEntropyLoss()(atn, attention.to(dtype=torch.float32))
 
-        #atn_loss = self.catCrossEntrLoss(attention, atn)
+        atn_loss = self.catCrossEntrLoss(attention, atn)
         '''print(f'gt attention argmax: {torch.argmax(attention, dim=-1)}')
         print(f'attention argmax: {torch.argmax(atn, dim=-1)}')
         print(f'abs correct: {(torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()}')'''
@@ -225,7 +224,14 @@ class NetworkTorch(nn.Module):
             weight_loss = (weight_loss * loss_atn[:,:-1]).mean()
 
         repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
-        phs_loss = (nn.MSELoss(-1)(phase, phs)).mean()
+        #print(f'phase: {phase.shape}')
+        #print(f'phs: {phs.shape}')
+        phs_loss = self.calculateMSEWithPaddingMask(phase, phs[:,:,0], loss_atn).mean()
+        #phs_loss = (nn.MSELoss(-1)(phase, phs)).mean()
+        #print(f'generated shep: {generated.shape}')
+        trj_loss = ((generated- gen_trj)**2).mean()
+        trj_loss = trj_loss.mean()
+        #print(trj_loss)
         trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim)
         if not len(result) == 2:
             trj_loss = (trj_loss * loss_atn).mean()
