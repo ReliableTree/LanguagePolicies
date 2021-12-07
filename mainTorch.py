@@ -34,9 +34,6 @@ WEIGHT_PHS      = 50 #1.0
 
 WEIGHT_FOD      = 50
 
-# Number of epochs to train
-TRAIN_EPOCHS    = 8
-
 
 def count_parameters(model):
     table = PrettyTable(["Modules", "Parameters"])
@@ -59,7 +56,7 @@ def init_weights(network):
         elif 'weight' in para_name:
             torch.nn.init.orthogonal_(para)
 
-def setupModel(device = 'cuda', batch_size = 100, path_dict = None, logname = None, model_path=None):
+def setupModel(device = 'cuda', epochs = 1,  batch_size = 100, path_dict = None, logname = None, model_path=None):
     model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], use_LSTM=False).to(device)
     #print(path_dict['TRAIN_DATA_TORCH'])
     train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
@@ -77,7 +74,7 @@ def setupModel(device = 'cuda', batch_size = 100, path_dict = None, logname = No
 
     #print(f'number of param,eters in net: {len(list(network.parameters()))} and number of applied: {i}')
     #network.load_state_dict(torch.load(MODEL_PATH), strict=True)
-    network.train(epochs=TRAIN_EPOCHS, use_transformer=True)
+    network.train(epochs=epochs, use_transformer=True)
     return network
 import os
 if __name__ == '__main__':
@@ -104,9 +101,13 @@ if __name__ == '__main__':
         if '-model' in args:
             model_path = args[args.index('-model') + 1]
 
+        epochs = 200
+        if '-epochs' in args:
+            epochs = args[args.index('-epochs') + 1]
+
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
-        network = setupModel(device=device, batch_size = 16, path_dict = path_dict, logname=logname, model_path=model_path)
+        network = setupModel(device=device, epochs = epochs, batch_size = 32, path_dict = path_dict, logname=logname, model_path=model_path)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 
