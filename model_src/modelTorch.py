@@ -24,7 +24,7 @@ from os import path, makedirs
 
 
 class PolicyTranslationModelTorch(nn.Module):
-    def __init__(self, od_path, glove_path, use_LSTM = False, use_lang_transformer = False, use_controller_transformer = False, use_obj_embedding = False, use_attn_transformer = False):
+    def __init__(self, od_path, glove_path, use_LSTM = False, use_lang_transformer = True, use_controller_transformer = True, use_obj_embedding = True, use_attn_transformer = True):
         super().__init__()
         self.units               = 32
         self.output_dims         = 7
@@ -53,9 +53,9 @@ class PolicyTranslationModelTorch(nn.Module):
         self.embedding = GloveEmbeddings(file_path=glove_path)
         if use_lang_transformer:
             self.lang_trans  = None
-            self.trans_d_hid = 200
-            self.nhead       = 4
-            self.nlayers     = 2
+            self.trans_d_hid = 304
+            self.nhead       = 8
+            self.nlayers     = 4
             self.transformer_seq_embedding = None
         else:
             self.lng_gru   = None
@@ -84,7 +84,7 @@ class PolicyTranslationModelTorch(nn.Module):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
 
 
-    def forward(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False, gt_attention = None):
+    def forward(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False, gt_attention = None, train_embedding = True):
         if training:
             use_dropout = True
             gt_attention = None
@@ -126,7 +126,11 @@ class PolicyTranslationModelTorch(nn.Module):
         if self.use_obj_embedding:
             if self.obj_embedding is None:
                 self.obj_embedding = nn.Embedding(30, 10).to(robot.device)
-            obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))   #16x10
+            if train_embedding:
+                obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))   #16x10
+            else:
+                with torch.no_grad():
+                    obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))
             obj_feature_embedding = torch.cat((features[:,:,1:], obj_feature_embedding), dim = -1)
         else:
             obj_feature_embedding = features

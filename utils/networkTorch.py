@@ -60,13 +60,14 @@ class NetworkTorch(nn.Module):
     def train(self, epochs):
         self.global_step = 0
         for epoch in range(epochs):
+            rel_epoch = epoch/epochs
             print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
             validation_loss = 0.0
             train_loss = []
             for step, (d_in, d_out) in enumerate(self.train_ds):
                 if step % 100 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False)                    
-                train_loss.append(self.step(d_in, d_out, train=True))
+                train_loss.append(self.step(d_in, d_out, train=True, train_embedding=(rel_epoch < 0.3)))
                 
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
@@ -122,11 +123,11 @@ class NetworkTorch(nn.Module):
             print("  Validation Loss: {:.6f}".format(np.mean(val_loss)))
         return np.mean(val_loss)
 
-    def step(self, d_in, d_out, train):
+    def step(self, d_in, d_out, train, train_embedding = True):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
         if not train:
             self.model.eval()
-        result = self.model(d_in, training=train, gt_attention = attention)
+        result = self.model(d_in, training=train, gt_attention = attention, train_embedding=train_embedding)
         if not train:
             self.model.train()
         loss, (atn, trj, dt, phs, wght, rel_obj) = self.calculateLoss(d_out, result, train)
@@ -134,8 +135,8 @@ class NetworkTorch(nn.Module):
 
         if train:
             if not self.optimizer:
-                #self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
-                self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999)) 
+                self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
+                #self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999)) 
                 #self.optimizer = torch.optim.SGD(params=self.model.parameters(), lr=self.lr, weight_decay=1e-2) 
                 self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 1.0, gamma=self.gamma_sl)
             #print(f'num parametrs in model: {len(list(self.model.parameters()))}')
@@ -227,7 +228,7 @@ class NetworkTorch(nn.Module):
         repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
         #print(f'phase: {phase.shape}')
         #print(f'phs: {phs.shape}')
-        phs_loss = self.calculateMSEWithPaddingMask(phase, phs[:,:,0], loss_atn).mean()
+        phs_loss = self.calculateMSEWithPaddingMask(phase, phs.squeeze(), loss_atn).mean()
         #phs_loss = (nn.MSELoss(-1)(phase, phs)).mean()
         #print(f'generated shep: {generated.shape}')
         trj_loss = ((generated- gen_trj)**2).mean()
@@ -239,7 +240,7 @@ class NetworkTorch(nn.Module):
         else:
             trj_loss = trj_loss.mean()
         if len(result) == 3:
-            return atn_loss * self.lw_atn + trj_loss * self.lw_trj, (atn_loss, trj_loss, trj_loss, phs_loss, trj_loss, rel_correct_objects)
+            return atn_loss * self.lw_atn + trj_loss * self.lw_trj + phs_loss * self.lw_phs, (atn_loss, trj_loss, trj_loss, phs_loss, trj_loss, rel_correct_objects)
         else:
             return (atn_loss * self.lw_atn +
                     trj_loss * self.lw_trj +

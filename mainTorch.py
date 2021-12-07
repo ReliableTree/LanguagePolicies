@@ -23,11 +23,11 @@ WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
 WEIGHT_W        = 50.0
 # Weight for the trajectroy generation loss
-WEIGHT_TRJ      = 5.0
+WEIGHT_TRJ      = 50#5.0
 # Weight for the time progression loss
 WEIGHT_DT       = 14.0
 # Weight for the phase prediction loss
-WEIGHT_PHS      = 1.0
+WEIGHT_PHS      = 50 #1.0
 # Number of epochs to train
 TRAIN_EPOCHS    = 200
 
