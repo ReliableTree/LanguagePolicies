@@ -103,7 +103,7 @@ if __name__ == '__main__':
 
         epochs = 200
         if '-epochs' in args:
-            epochs = args[args.index('-epochs') + 1]
+            epochs = int(args[args.index('-epochs') + 1])
 
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
