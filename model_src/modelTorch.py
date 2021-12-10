@@ -35,7 +35,6 @@ class PolicyTranslationModelTorch(nn.Module):
         self.use_obj_embedding = use_obj_embedding
         self.use_attn_transformer = use_attn_transformer
 
-
         if od_path != "":                
             od_path    = pathlib.Path(od_path)/"saved_model" 
             self.frcnn = tf.saved_model.load(str(od_path))

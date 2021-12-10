@@ -15,7 +15,7 @@ import torch.nn as nn
 import time
 
 class NetworkTorch(nn.Module):
-    def __init__(self, model, data_path, logname, lr, lw_atn, lw_w, lw_trj, lw_gen_trj, lw_dt, lw_phs, lw_fod, log_freq=25, gamma_sl = 0.995, device = 'cuda', use_transformer = True):
+    def __init__(self, model, data_path, logname, lr, lw_atn, lw_w, lw_trj, lw_gen_trj, lw_dt, lw_phs, lw_fod, log_freq=25, gamma_sl = 0.995, device = 'cuda', use_transformer = True, tboard=True):
         super().__init__()
         self.optimizer         = None
         self.model             = model
@@ -25,6 +25,7 @@ class NetworkTorch(nn.Module):
         self.device = device
         self.data_path = data_path
         self.use_transformer = use_transformer
+        self.use_tboard = tboard
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -32,7 +33,8 @@ class NetworkTorch(nn.Module):
         else:
             self.instance_name = None
 
-        self.tboard            = TBoardGraphsTorch(self.logname, data_path=data_path)
+        if tboard:
+            self.tboard            = TBoardGraphsTorch(self.logname, data_path=data_path)
         self.loss              = nn.CrossEntropyLoss()
         self.global_best_loss  = float('inf')
         self.global_best_loss_val = float('inf')
@@ -71,7 +73,7 @@ class NetworkTorch(nn.Module):
             teb = rel_epoch < 0.3
             print(f'train ambedding: {teb}')
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                if step % 100 == 0:
+                if step % 1 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False)                    
                 train_loss.append(self.step(d_in, d_out, train=True, train_embedding=teb))
                 
@@ -85,8 +87,8 @@ class NetworkTorch(nn.Module):
             self.scheduler.step()
             print(f'learning rate: {self.scheduler.get_last_lr()[0]}')
 
-            #TODO
-            self.model.saveModelToFile(add = self.logname + "/", data_path = self.data_path)
+            if self.use_tboard:
+                self.model.saveModelToFile(add = self.logname + "/", data_path = self.data_path)
 
             if epoch % self.log_freq == 0 and self.instance_name is not None:
                 self._uploadToCloud(epoch)
@@ -121,16 +123,19 @@ class NetworkTorch(nn.Module):
         #out_model_tf = [self.torch2tf(out_model[0]), [self.torch2tf(ele) for ele in out_model[1]]]
         #d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
         #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
-        self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
-                          (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                          out_model)
+        if self.use_tboard:
+            self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
+                            (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
+                            out_model,
+                            save=True)
         loss = np.mean(val_loss)
         if pnt:
             print("  Validation Loss: {:.6f}".format(loss))
         if not quick:
             if loss < self.global_best_loss_val:
                 self.global_best_loss_val = loss
-                self.model.saveModelToFile(add=self.logname + "/best_val/", data_path= self.data_path)
+                if self.use_tboard:
+                    self.model.saveModelToFile(add=self.logname + "/best_val/", data_path= self.data_path)
                 print(f'best val model saved with: {loss}')
         return np.mean(val_loss)
 
@@ -161,28 +166,31 @@ class NetworkTorch(nn.Module):
                 print(f'para num {i} has grad sum {para.grad.detach().sum()}')'''
             self.optimizer.step()
 
-            self.tboard.addTrainScalar("Loss", loss, self.global_step)
-            self.tboard.addTrainScalar("Loss Attention", atn, self.global_step)
-            self.tboard.addTrainScalar("Loss Trajectory", trj, self.global_step)
-            self.tboard.addTrainScalar("Loss Phase", phs, self.global_step)
-            self.tboard.addTrainScalar("Loss Weight", wght, self.global_step)
-            self.tboard.addTrainScalar("Loss Delta T", dt, self.global_step)
-            self.tboard.addTrainScalar("Relative Object correct", rel_obj, self.global_step)
+            if self.use_tboard:
+                self.tboard.addTrainScalar("Loss", loss, self.global_step)
+                self.tboard.addTrainScalar("Loss Attention", atn, self.global_step)
+                self.tboard.addTrainScalar("Loss Trajectory", trj, self.global_step)
+                self.tboard.addTrainScalar("Loss Phase", phs, self.global_step)
+                self.tboard.addTrainScalar("Loss Weight", wght, self.global_step)
+                self.tboard.addTrainScalar("Loss Delta T", dt, self.global_step)
+                self.tboard.addTrainScalar("Relative Object correct", rel_obj, self.global_step)
         else:
             if self.last_written_step != self.global_step:
-                self.last_written_step = self.global_step
-                self.tboard.addValidationScalar("Loss", loss, self.global_step)
-                self.tboard.addValidationScalar("Loss Attention", atn, self.global_step)
-                self.tboard.addValidationScalar("Loss Trajectory", trj, self.global_step)
-                self.tboard.addValidationScalar("Loss Phase", phs, self.global_step)
-                self.tboard.addValidationScalar("Loss Weight", wght, self.global_step)
-                self.tboard.addValidationScalar("Loss Delta T", dt, self.global_step)
-                self.tboard.addValidationScalar("Relative Object correct", rel_obj, self.global_step)
+                if self.use_tboard:
+                    self.last_written_step = self.global_step
+                    self.tboard.addValidationScalar("Loss", loss, self.global_step)
+                    self.tboard.addValidationScalar("Loss Attention", atn, self.global_step)
+                    self.tboard.addValidationScalar("Loss Trajectory", trj, self.global_step)
+                    self.tboard.addValidationScalar("Loss Phase", phs, self.global_step)
+                    self.tboard.addValidationScalar("Loss Weight", wght, self.global_step)
+                    self.tboard.addValidationScalar("Loss Delta T", dt, self.global_step)
+                    self.tboard.addValidationScalar("Relative Object correct", rel_obj, self.global_step)
 
                 loss = loss.detach().cpu()
                 if loss < self.global_best_loss:
                     self.global_best_loss = loss
-                    self.model.saveModelToFile(add=self.logname + "/best/", data_path= self.data_path)
+                    if self.use_tboard:
+                        self.model.saveModelToFile(add=self.logname + "/best/", data_path= self.data_path)
                     #print(f'model saved with loss: {loss}')
 
         return loss.detach().cpu().numpy()
@@ -266,7 +274,7 @@ class NetworkTorch(nn.Module):
             print("")
         sys.stdout.flush()
 
-    def createGraphs(self, d_in, d_out, result):
+    def createGraphs(self, d_in, d_out, result, save = False):
         language, image, robot_states            = d_in
         target_trj, attention, delta_t, weights  = d_out
         if not self.use_transformer:
@@ -275,6 +283,7 @@ class NetworkTorch(nn.Module):
             gen_trj, gen_gen_trj, atn, phase = result
 
             dmp_dt = None
+
 
 
         self.tboard.plotClassAccuracy(attention, self.tf2torch(tf.math.reduce_mean(self.torch2tf(atn), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(atn), axis=0)), self.tf2torch(self.torch2tf(language)), stepid=self.global_step)
@@ -286,9 +295,9 @@ class NetworkTorch(nn.Module):
             gen_gen_trj= self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_gen_trj), axis=0))
             gen_tr_phase = self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0))
             self.tboard.plotDMPTrajectory(target_trj, gen_tr_trj, torch.zeros_like(gen_tr_trj),
-                                        gen_tr_phase, delta_t, None, stepid=self.global_step)
+                                        gen_tr_phase, delta_t, None, stepid=self.global_step, save=save)
             self.tboard.plotDMPTrajectory(target_trj, gen_gen_trj, torch.zeros_like(gen_gen_trj),
-                                        gen_tr_phase, delta_t, None, stepid=self.global_step, name='Gen - Trajectoy')
+                                        gen_tr_phase, delta_t, None, stepid=self.global_step, name='Gen - Trajectoy', save=save)
 
                 
 

@@ -531,7 +531,13 @@ class Simulator(object):
         data["phase_1"]     = e_data
         TBGT = TBoardGraphsTorch()
         for data in e_data.values():
-            TBGT.plotDMPTrajectory(y_true=torch.tensor(data['trajectory']['gt']), y_pred=torch.tensor(data['trajectory']['gt']), save=True)
+            print(f'len of traj: {data["trajectory"]["gt"].shape}')
+            print(f'max_target: {data["trajectory"]["gt"].max()}')
+            print(f'min_target: {data["trajectory"]["gt"].min()}')
+            print(f'len of traj gen: {data["trajectory"]["state"].shape}')
+            print(f'max_pred: {data["trajectory"]["state"].max()}')
+            print(f'min_pred: {data["trajectory"]["state"].min()}')
+            TBGT.plotDMPTrajectory(y_true=torch.tensor(data['trajectory']['gt']), y_pred=torch.tensor(data['trajectory']['state']), save=True)
         #s_p2, e_data        = self.valPhase2(files)
         #data["phase_2"]     = e_data
 

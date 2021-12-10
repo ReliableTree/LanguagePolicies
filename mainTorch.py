@@ -56,14 +56,14 @@ def init_weights(network):
         elif 'weight' in para_name:
             torch.nn.init.orthogonal_(para)
 
-def setupModel(device = 'cuda', epochs = 1,  batch_size = 100, path_dict = None, logname = None, model_path=None):
+def setupModel(device = 'cuda', epochs = 1,  batch_size = 100, path_dict = None, logname = None, model_path=None, tboard=None):
     model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], use_LSTM=False).to(device)
     #print(path_dict['TRAIN_DATA_TORCH'])
     train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     eval_data = TorchDataset(path = path_dict['VAL_DATA_TORCH'], device=device)
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
-    network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=WEIGHT_FOD, gamma_sl = 1, device=device)
+    network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=WEIGHT_FOD, gamma_sl = 1, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
     network.setup_model()
@@ -109,9 +109,14 @@ if __name__ == '__main__':
         if '-batch_size' in args:
             batch_size = int(args[args.index('-batch_size') + 1])
 
+        tboard = True
+        if '-tboard' in args:
+            tboard = (args[args.index('-tboard') + 1]) == 'T'
+            print(f'tboard: {tboard}')
+
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
-        network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path)
+        network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 
