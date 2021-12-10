@@ -105,9 +105,13 @@ if __name__ == '__main__':
         if '-epochs' in args:
             epochs = int(args[args.index('-epochs') + 1])
 
+        batch_size = 16
+        if '-batch_size' in args:
+            batch_size = int(args[args.index('-batch_size') + 1])
+
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
-        network = setupModel(device=device, epochs = epochs, batch_size = 2, path_dict = path_dict, logname=logname, model_path=model_path)
+        network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 
