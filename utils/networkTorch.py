@@ -35,6 +35,7 @@ class NetworkTorch(nn.Module):
         self.tboard            = TBoardGraphsTorch(self.logname, data_path=data_path)
         self.loss              = nn.CrossEntropyLoss()
         self.global_best_loss  = float('inf')
+        self.global_best_loss_val = float('inf')
         self.last_written_step = -1
         self.log_freq          = log_freq
 
@@ -123,8 +124,14 @@ class NetworkTorch(nn.Module):
         self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
                           (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
                           out_model)
+        loss = np.mean(val_loss)
         if pnt:
-            print("  Validation Loss: {:.6f}".format(np.mean(val_loss)))
+            print("  Validation Loss: {:.6f}".format(loss))
+        if not quick:
+            if loss < self.global_best_loss_val:
+                self.global_best_loss_val = loss
+                self.model.saveModelToFile(add=self.logname + "/best_val/", data_path= self.data_path)
+                print(f'best val model saved with: {loss}')
         return np.mean(val_loss)
 
     def step(self, d_in, d_out, train, train_embedding = True):
@@ -176,7 +183,7 @@ class NetworkTorch(nn.Module):
                 if loss < self.global_best_loss:
                     self.global_best_loss = loss
                     self.model.saveModelToFile(add=self.logname + "/best/", data_path= self.data_path)
-                    print(f'model saved with loss: {loss}')
+                    #print(f'model saved with loss: {loss}')
 
         return loss.detach().cpu().numpy()
     

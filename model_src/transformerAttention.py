@@ -22,7 +22,6 @@ class TransformerAttention(nn.Module):
         #print(f'features size: {features.shape}')
         #features = 16x6x5
         #language = 16x32
-        
         lf = torch.cat((features, language), dim = 2) #16x6x37
         lf = lf.transpose(0,1) #6X16X37
         if self.TA is None:

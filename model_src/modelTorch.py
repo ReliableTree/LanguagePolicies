@@ -54,8 +54,8 @@ class PolicyTranslationModelTorch(nn.Module):
         if use_lang_transformer:
             self.lang_trans  = None
             self.trans_d_hid = 42
-            self.nhead       = 1
-            self.nlayers     = 1
+            self.nhead       = 2
+            self.nlayers     = 2
             self.transformer_seq_embedding = None
         else:
             self.lng_gru   = None
@@ -91,7 +91,7 @@ class PolicyTranslationModelTorch(nn.Module):
 
         language_in   = inputs[0]
         #print(f'vor if in model: {language_in}')
-        if language_in is not self.last_language:
+        if (self.last_language is None) or (not torch.equal(language_in, self.last_language)):
             self.last_language = language_in
 
             language_in_tf = tf.convert_to_tensor(language_in.cpu().numpy())
@@ -115,36 +115,37 @@ class PolicyTranslationModelTorch(nn.Module):
                     self.build_lang_gru(language)
                 _, language  = self.lng_gru(language) 
             #print(f'language shape: {language.shape}')
-            language = language.squeeze()               #16 x 32
+            self.language = language.squeeze()               #16 x 32
 
-        features   = inputs[1]                          #16x6x5 first entry is object class
+            features   = inputs[1]                          #16x6x5 first entry is object class
+            # Calculate attention and expand it to match the feature size
+            if self.use_obj_embedding:
+                if self.obj_embedding is None:
+                    self.obj_embedding = nn.Embedding(30, 10).to(features.device)
+                if train_embedding:
+                    obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))   #16x10
+                else:
+                    with torch.no_grad():
+                        obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))
+                obj_feature_embedding = torch.cat((features[:,:,1:], obj_feature_embedding), dim = -1)
+            else:
+                obj_feature_embedding = features
+            if self.attention is None and self.use_attn_transformer:
+                self.attention = TransformerAttention(device = features.device)
+            self.atn = self.attention((self.language, obj_feature_embedding))
+            if gt_attention is None:
+                main_obj = torch.argmax(self.atn, dim=-1)
+            else:
+                main_obj = torch.argmax(gt_attention, dim=-1) 
+            #print(f'atn.shape, {atn.shape}')
+
+            counter = torch.arange(features.size(0))
+            self.cfeatures_max = obj_feature_embedding[(counter, main_obj)]           #16x5
+            #print(f'cfeatures: {features[0]}')
         # local      = features[:,:,:5]
         robot      = inputs[2]                           #16x350x7
         # dmp_state  = inputs[3]
 
-        # Calculate attention and expand it to match the feature size
-        if self.use_obj_embedding:
-            if self.obj_embedding is None:
-                self.obj_embedding = nn.Embedding(30, 10).to(robot.device)
-            if train_embedding:
-                obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))   #16x10
-            else:
-                with torch.no_grad():
-                    obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))
-            obj_feature_embedding = torch.cat((features[:,:,1:], obj_feature_embedding), dim = -1)
-        else:
-            obj_feature_embedding = features
-        if self.attention is None and self.use_attn_transformer:
-            self.attention = TransformerAttention(device = robot.device)
-        atn = self.attention((language, obj_feature_embedding))
-        if gt_attention is None:
-            main_obj = torch.argmax(atn, dim=-1)
-        else:
-            main_obj = torch.argmax(gt_attention, dim=-1) 
-        #print(f'atn.shape, {atn.shape}')
-
-        counter = torch.arange(features.size(0))
-        cfeatures_max = obj_feature_embedding[(counter, main_obj)]           #16x5
 
         '''atn_w = atn.unsqueeze(2)
         atn_w = atn_w.repeat([1,1,5])
@@ -155,7 +156,7 @@ class PolicyTranslationModelTorch(nn.Module):
         # Add the language to the mix again. Possibly usefull to predict dt
 
         if self.use_controller_transformer:
-            cfeatures = torch.cat((cfeatures_max, language), axis=1)   #16x46
+            cfeatures = torch.cat((self.cfeatures_max, self.language), axis=1)   #16x46
             #print(f'cfeatures after cat: {cfeatures.shape}')
             cfeatures = cfeatures.unsqueeze(1).repeat(1,robot.size(1),1)         #16x350x46
             #print(f'cfeatures after repeat: {cfeatures.shape}')
@@ -164,14 +165,14 @@ class PolicyTranslationModelTorch(nn.Module):
 
             if self.controller_transformer is None:
                 #d_output = 8, 1:7 = robot, 8 = phase 
-                d_model = 304
-                self.controller_transformer = ControllerTransformer(ntoken=53, d_output=8, d_model=d_model, nhead=8, d_hid=d_model, nlayers=4).to(inpt_seq.device)
+                d_model = 210
+                self.controller_transformer = ControllerTransformer(ntoken=53, d_output=8, d_model=d_model, nhead=6, d_hid=d_model, nlayers=4).to(inpt_seq.device)
                 self.trans_seq_len = max(inpt_seq.size(1), 350)
-                self.src_mask = generate_square_subsequent_mask(self.trans_seq_len).to(inpt_seq.device)
-            if inpt_seq.size(1) != self.trans_seq_len:
-                src_mask = self.src_mask[:inpt_seq.size(1), :inpt_seq.size(1)]
-            else:
-                src_mask = self.src_mask
+            src_mask = generate_square_subsequent_mask(inpt_seq.size(1)).to(inpt_seq.device)
+            #if inpt_seq.size(1) != self.trans_seq_len:
+            #    src_mask = self.src_mask[:inpt_seq.size(1), :inpt_seq.size(1)]
+            #else:
+                #src_mask = self.src_mask
 
             #result from gt:
             generated_from_gt = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask)  #350x16x8
@@ -185,13 +186,13 @@ class PolicyTranslationModelTorch(nn.Module):
                 generated_trj_for_generation = generated_for_generation[:,:,:7]
                 inpt_seq_generated = torch.cat((cfeatures, generated_trj_for_generation), dim = -1)
                 generated_from_generated = self.controller_transformer(inpt_seq_generated.transpose(0,1), src_mask = src_mask).transpose(0,1) 
-                return generated_from_gt[:,:,:7], generated_from_generated[:,:,:7], atn, generated_from_generated[:,:,7]
+                return generated_from_gt[:,:,:7], generated_from_generated[:,:,:7], self.atn, generated_from_generated[:,:,7]
             else:
-                return generated_from_gt[:,:,:7], atn, generated_from_gt[:,:,7]
+                return generated_from_gt[:,:,:7], self.atn, generated_from_gt[:,:,7]
 
         else:
             start_joints  = robot[:,0,:]
-            cfeatures = torch.cat((cfeatures_max, language, start_joints), axis=1)
+            cfeatures = torch.cat((self.cfeatures_max, self.language, start_joints), axis=1)
 
             #cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
 
@@ -217,9 +218,9 @@ class PolicyTranslationModelTorch(nn.Module):
             generated, phase, weights, last_gru_state = self.controller.forward(seq_inputs=robot, states=initial_state, constants=(cfeatures, dmp_dt), training=training)
 
             if return_cfeature:
-                return generated, (atn, dmp_dt, phase, weights, cfeatures, last_gru_state)
+                return generated, (self.atn, dmp_dt, phase, weights, cfeatures, last_gru_state)
             else:
-                return generated, (atn, dmp_dt, phase, weights)
+                return generated, (self.atn , dmp_dt, phase, weights)
     
     def getVariables(self, step=None):
         return self.parameters()
@@ -237,5 +238,4 @@ class PolicyTranslationModelTorch(nn.Module):
         path_to_file = os.path.join(data_path, "Data/Model/", add)
         if not path.exists(path_to_file):
             makedirs(path_to_file)
-        print(f'saveModelToFile pathL: {path_to_file}')
         torch.save(self.state_dict(), path_to_file + "policy_translation_h")

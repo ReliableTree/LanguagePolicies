@@ -22,6 +22,8 @@ import os.path
 import os
 import matplotlib.pyplot as plt
 from PIL import Image
+import torch
+from utils.graphsTorch import TBoardGraphsTorch
 
 # Default robot position. You don't need to change this
 DEFAULT_UR5_JOINTS  = [105.0, -30.0, 120.0, 90.0, 60.0, 90.0]
@@ -33,7 +35,7 @@ USE_SHAPE_SIZE      = True
 # (manual mode will allow you to generate environments and type in your own commands)
 RUN_ON_TEST_DATA    = True
 # How many of the 100 test-data do you want to test?
-NUM_TESTED_DATA     = 100
+NUM_TESTED_DATA     = 1
 # Where to find the normailization?
 NORM_PATH           = "/home/hendrik/Documents/master_project/LokalData/GDrive/normalization_v2.pkl"
 # Where to find the VRep scene file. This has to be an absolute path. 
@@ -160,6 +162,8 @@ class Simulator(object):
         self.pyrep.start()
     
     def _createEnvironment(self, ints, floats):
+        #print(f'ints: {ints}')
+        #print(f'floatsL {floats}')
         result = self.pyrep.script_call(
             function_name_at_script_name="generateScene@control_script",
             script_handle_or_type=1,
@@ -168,6 +172,8 @@ class Simulator(object):
             strings=(), 
             bytes=""
         )
+        #print(self.pyrep.get_objects_in_tree())
+
 
     def _getClosesObject(self):
         oid, dist, _, _ = self.pyrep.script_call(function_name_at_script_name="getClosesObject@control_script",
@@ -390,6 +396,7 @@ class Simulator(object):
         nn_trajectory  = []
         ro_trajectory  = []
         for fid, fn in enumerate(files):
+            torch.cuda.empty_cache()
             print("Phase 1 Run {}/{}".format(fid, len(files)))
             eval_data = {}
             with open(fn + "1.json", "r") as fh:
@@ -409,13 +416,14 @@ class Simulator(object):
             phase = 0.0
             self.last_gripper = 0.0
             th = 1.0
-            while phase < th:# and cnt < int(gt_trajectory.shape[0] * 1.5):
+         
+            
+            while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5) and cnt < 250:
                 state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
                 cnt += 1
                 tf_trajectory, phase = self.predictTrajectory(data["voice"], state, cnt)
                 r_state    = tf_trajectory[-1,:]
                 eval_data["trajectory"]["state"].append(r_state.tolist())
-                r_state[6] = r_state[6] 
                 nn_trajectory.append(r_state)
                 ro_trajectory.append(self._getRobotState())
                 self.last_gripper = r_state[6]
@@ -423,6 +431,7 @@ class Simulator(object):
                 self.pyrep.step()
                 if r_state[6] > 0.5 and "locations" not in eval_data.keys():
                     eval_data["locations"] = self._getTargetPosition(data)
+                    print(f'closest: {self._getTargetPosition(data)}')
 
             eval_data["success"] = False
             if self._graspedObject():
@@ -478,7 +487,11 @@ class Simulator(object):
             cnt   = 0
             phase = 0.0
             th = 1.0
-            while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5):
+            
+            #print(f'data: {data}')
+            print(f'target position: {self._getTargetPosition(data)}')
+
+            while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5)  and cnt < 300:
                 state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
                 cnt += 1
                 tf_trajectory, phase = self.predictTrajectory(data["voice"], self._getRobotState(), cnt)
@@ -516,11 +529,14 @@ class Simulator(object):
         data = {}
         s_p1, e_data        = self.valPhase1(files)
         data["phase_1"]     = e_data
-        s_p2, e_data        = self.valPhase2(files)
-        data["phase_2"]     = e_data
+        TBGT = TBoardGraphsTorch()
+        for data in e_data.values():
+            TBGT.plotDMPTrajectory(y_true=torch.tensor(data['trajectory']['gt']), y_pred=torch.tensor(data['trajectory']['gt']), save=True)
+        #s_p2, e_data        = self.valPhase2(files)
+        #data["phase_2"]     = e_data
 
         self.node.get_logger().info("Testing Picking: {}/{} ({:.1f}%)".format(s_p1,  runs, 100.0 * float(s_p1)/float(runs)))
-        self.node.get_logger().info("Testing Pouring: {}/{} ({:.1f}%)".format(s_p2,  runs, 100.0 * float(s_p2)/float(runs)))
+        #self.node.get_logger().info("Testing Pouring: {}/{} ({:.1f}%)".format(s_p2,  runs, 100.0 * float(s_p2)/float(runs)))
 
         p1_names = data["phase_1"].keys()
         p2_names = data["phase_2"].keys()
@@ -575,7 +591,6 @@ class Simulator(object):
                 floats += [np.random.uniform(-math.pi/4.0,  math.pi/4.0)]
             else:
                 floats += [0.0]
-
         self._createEnvironment(ints, floats)
         self.node.get_logger().info("Created new environment")
         return ints, floats

@@ -32,7 +32,7 @@ WEIGHT_DT       = 14.0
 # Weight for the phase prediction loss
 WEIGHT_PHS      = 50 #1.0
 
-WEIGHT_FOD      = 50
+WEIGHT_FOD      = 0
 
 
 def count_parameters(model):
@@ -107,7 +107,7 @@ if __name__ == '__main__':
 
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
-        network = setupModel(device=device, epochs = epochs, batch_size = 32, path_dict = path_dict, logname=logname, model_path=model_path)
+        network = setupModel(device=device, epochs = epochs, batch_size = 2, path_dict = path_dict, logname=logname, model_path=model_path)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 

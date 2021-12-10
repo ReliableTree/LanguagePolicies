@@ -10,9 +10,7 @@ from torch._C import dtype
 import rclpy
 from policy_translation.srv import NetworkPT, TuneNetwork
 from model_src.modelTorch import PolicyTranslationModelTorch
-from utils.network import Network
 from utils.tf_util import trainOnCPU, limitGPUMemory
-from utils.intprim.gaussian_model import GaussianModel
 from utils.safe_cfeatures import save_dict_of_features
 import tensorflow as tf
 import numpy as np
@@ -63,7 +61,7 @@ TRAIN_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDatase
 
 VAL_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/val_data_torch.txt'
 
-MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/DRLLXoQw10A/best/policy_translation_h'
+MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/transModel/best/policy_translation_h'
 
 from torch.utils.data import DataLoader
 from utils.convertTFDataToPytorchData import TorchDataset
@@ -76,7 +74,7 @@ else:
     limitGPUMemory()
 
 # should not use network.savedict.....
-def setup_model(device = 'cpu', batch_size = 1000):
+def setup_model(device = 'cpu', batch_size = 2):
     model   = PolicyTranslationModelTorch(od_path=FRCNN_PATH, glove_path=GLOVE_PATH).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
@@ -84,7 +82,7 @@ def setup_model(device = 'cpu', batch_size = 1000):
 
     eval_data = TorchDataset(path = VAL_DATA_TORCH, device=device)
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
-    network = NetworkTorch(model, data_path='/home/hendrik/Documents/master_project/LokalData', logname='LOGNAME', lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
+    network = NetworkTorch(model, data_path='/home/hendrik/Documents/master_project/LokalData', logname='LOGNAME', lr=LEARNING_RATE, lw_gen_trj = 0, lw_fod = 0,  lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
     network.setup_model()
     model.load_state_dict(torch.load(MODEL_PATH, map_location='cuda:0'))
@@ -223,27 +221,28 @@ class NetworkService():
 
         robot           = np.asarray(self.history, dtype=np.float32)
         #robot           = np.asarray([list(req.robot)], dtype=np.float32)
+        do_dim = 200
         self.input_data = (
-            torch.tensor(np.tile([self.language],[250, 1]), dtype=torch.int64, device=self.device), 
-            torch.tensor(np.tile([self.features],[250, 1, 1]), dtype=torch.float32, device=self.device),
-            torch.tensor(np.tile([robot],[250, 1, 1]), dtype=torch.float32, device=self.device),
+            torch.tensor(np.tile([self.language],[do_dim, 1]), dtype=torch.int64, device=self.device), 
+            torch.tensor(np.tile([self.features],[do_dim, 1, 1]), dtype=torch.float32, device=self.device),
+            torch.tensor(np.tile([robot],[do_dim, 1, 1]), dtype=torch.float32, device=self.device),
             self.last_GRU_state
         )
         #HENDRIK
         h = time.perf_counter()
         with torch.no_grad():
+            self.model.train()
             generated, atn, phase = self.model(self.input_data, training=False, use_dropout=True, node = self.node, return_cfeature = False)
-        phase = len(self.history)/340
-        print(f'time for one call: {time.perf_counter() - h}')
-        print(f'phase value: {phase}')
+        #print(f'time for one call: {time.perf_counter() - h}')
         #print(f'atn : {atn}')
         self.trj_gen    = generated.mean(axis=0).cpu().numpy()
-        print(f'trj_gen: {self.trj_gen.shape}')
+        #print(f'trj_gen: {self.trj_gen.shape}')
 
-        phase_value     = phase
+        phase_value     = phase.mean()
+        #print(f'phase: {phase_value}')
 
         if (phase_value > 0.95):# and len(self.sfp_history) > 100:
-            print(f'phase value: {phase_value}')
+            #print(f'phase value: {phase_value}')
             np.save("history", self.history)
 
             gen_trajectory = []

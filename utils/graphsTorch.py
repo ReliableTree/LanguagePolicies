@@ -1,5 +1,6 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
+from pickle import NONE
 import matplotlib
 #matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -15,14 +16,15 @@ from utils.intprim.gaussian_model import GaussianModel
 import os
 
 class TBoardGraphsTorch():
-    def __init__(self, logname, data_path):
-        self.__hashids           = Hashids()
-        #self.logdir              = "Data/TBoardLog/" + logname + "/"
-        self.logdir              = os.path.join(data_path, "gboard/" + logname + "/")
-        print(f'log dir: {self.logdir + "train/"}')
-        self.__tboard_train      = tf.summary.create_file_writer(self.logdir + "train/")
-        self.__tboard_validation = tf.summary.create_file_writer(self.logdir + "validate/")
-        self.voice               = Voice(path=data_path)
+    def __init__(self, logname= None, data_path = None):
+        if logname is not None:
+            self.__hashids           = Hashids()
+            #self.logdir              = "Data/TBoardLog/" + logname + "/"
+            self.logdir              = os.path.join(data_path, "gboard/" + logname + "/")
+            print(f'log dir: {self.logdir + "train/"}')
+            self.__tboard_train      = tf.summary.create_file_writer(self.logdir + "train/")
+            self.__tboard_validation = tf.summary.create_file_writer(self.logdir + "validate/")
+            self.voice               = Voice(path=data_path)
 
     def startDebugger(self):
         tf.summary.trace_on(graph=True, profiler=True)
@@ -48,7 +50,10 @@ class TBoardGraphsTorch():
             tf.summary.scalar(name, tfvalue, step=stepid)
 
     def torch2tf(self, inpt):
-        return tf.convert_to_tensor(inpt.detach().cpu().numpy())
+        if inpt is not None:
+            return tf.convert_to_tensor(inpt.detach().cpu().numpy())
+        else:
+            return inpt
 
     def plotTrajectory(self, y_true, y_pred, dt_true, dt_pred, stepid):
         tf_y_true = self.torch2tf(y_true)
@@ -197,10 +202,9 @@ class TBoardGraphsTorch():
         
         return result
 
-    def plotDMPTrajectory(self, y_true, y_pred, y_pred_std= None, phase= None, dt= None, p_dt= None, stepid= None, name = "Trajectory"):
+    def plotDMPTrajectory(self, y_true, y_pred, y_pred_std = None, phase= None, dt= None, p_dt= None, stepid= None, name = "Trajectory", save = False):
         tf_y_true = self.torch2tf(y_true)
         tf_y_pred = self.torch2tf(y_pred)
-        tf_y_pred_std = self.torch2tf(y_pred_std)
         tf_phase = self.torch2tf(phase)
 
         if p_dt is not None:
@@ -209,8 +213,8 @@ class TBoardGraphsTorch():
 
         tf_y_true      = tf_y_true.numpy()
         tf_y_pred      = tf_y_pred.numpy()
-        tf_y_pred_std  = tf_y_pred_std.numpy()
-        tf_phase       = tf_phase.numpy()
+        if tf_phase is not None:
+            tf_phase       = tf_phase.numpy()
 
         if p_dt is not None:
             tf_dt          = tf_dt.numpy() * 350.0
@@ -227,18 +231,22 @@ class TBoardGraphsTorch():
             # GT Trajectory:
             ax[idx,idy].plot(range(trj_len), tf_y_true[:,sp],   alpha=1.0, color='forestgreen')            
             ax[idx,idy].plot(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], alpha=0.75, color='mediumslateblue')
-            ax[idx,idy].errorbar(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], xerr=None, yerr=tf_y_pred_std[:,sp], alpha=0.25, fmt='none', color='mediumslateblue')
+            ax[idx,idy].errorbar(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], xerr=None, yerr=None, alpha=0.25, fmt='none', color='mediumslateblue')
             ax[idx,idy].set_ylim([-0.1, 1.1])
             if p_dt is not None:
                 ax[idx,idy].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
         
-        ax[2,2].plot(range(tf_y_pred.shape[0]), tf_phase, color='orange')
+        if tf_phase is not None:
+            ax[2,2].plot(range(tf_y_pred.shape[0]), tf_phase, color='orange')
         if p_dt is not None:
             ax[2,2].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
             ax[2,2].plot([tf_p_dt*350.0, tf_p_dt*350.0], [0.0,1.0], linestyle=":", color='mediumslateblue')
             ax[2,2].set_ylim([-0.1, 1.1])
 
         result = np.expand_dims(self.finishFigure(fig), 0)
+        if save:
+            plt.savefig('test.png')
         plt.close()
-        with self.__tboard_validation.as_default():
-            tf.summary.image(name, data=result, step=stepid)
+        if not save:
+            with self.__tboard_validation.as_default():
+                tf.summary.image(name, data=result, step=stepid)
