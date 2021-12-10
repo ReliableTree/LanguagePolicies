@@ -35,7 +35,7 @@ USE_SHAPE_SIZE      = True
 # (manual mode will allow you to generate environments and type in your own commands)
 RUN_ON_TEST_DATA    = True
 # How many of the 100 test-data do you want to test?
-NUM_TESTED_DATA     = 12
+NUM_TESTED_DATA     = 1
 # Where to find the normailization?
 NORM_PATH           = "/home/hendrik/Documents/master_project/LokalData/GDrive/normalization_v2.pkl"
 # Where to find the VRep scene file. This has to be an absolute path. 

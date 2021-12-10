@@ -30,13 +30,13 @@ FORCE_CPU    = True
 # Use dropout at run-time for stochastif-forward passes
 USE_DROPOUT  = True
 # Where can we find the trained model?
-MODEL_PATH   = "../GDrive/model/policy_translation"
+MODEL_PATH   = "/home/hendrik/Documents/master_project/LokalData/GDrive/model/policy_translation"
 # Where is a pre-trained faster-rcnn?
-FRCNN_PATH   = "../GDrive/rcnn"
+FRCNN_PATH   = "/home/hendrik/Documents/master_project/LokalData/GDrive/rcnn"
 # Where are the GloVe word embeddings?
-GLOVE_PATH   = "../GDrive/glove.6B.50d.txt"
+GLOVE_PATH   = "/home/hendrik/Documents/master_project/LokalData/GDrive/glove.6B.50d.txt"
 # Where is the normalization of the dataset?
-NORM_PATH    = "../GDrive/normalization_v2.pkl"
+NORM_PATH    = "/home/hendrik/Documents/master_project/LokalData/GDrive/normalization_v2.pkl"
 
 if FORCE_CPU:
     trainOnCPU()

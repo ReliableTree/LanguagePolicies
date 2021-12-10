@@ -112,7 +112,7 @@ class NetworkTorch(nn.Module):
             print("Running full validation...")
         val_loss = []
         for step, (d_in, d_out) in enumerate(self.val_ds):
-            val_loss.append(self.step(d_in, d_out, train=False))
+            val_loss.append(self.step(d_in, d_out, train=False, recursive = True))
             if quick:
                 break
         in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[50,1]))
@@ -141,11 +141,11 @@ class NetworkTorch(nn.Module):
                 print(f'best val model saved with: {loss}')
         return np.mean(val_loss)
 
-    def step(self, d_in, d_out, train, train_embedding = True):
+    def step(self, d_in, d_out, train, train_embedding = True, recursive = False):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
         if not train:
             self.model.eval()
-        result = self.model(d_in, training=train, gt_attention = attention, train_embedding=train_embedding, return_gen_gen = True)
+        result = self.model(d_in, training=train, gt_attention = attention, train_embedding=train_embedding, return_gen_gen = True, recursive=recursive)
         if not train:
             self.model.train()
         loss, (atn, trj, dt, phs, wght, rel_obj) = self.calculateLoss(d_out, result, train)
