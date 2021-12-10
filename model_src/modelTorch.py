@@ -1,5 +1,6 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
+import pickle
 import tensorflow as tf
 import numpy as np
 import pathlib
@@ -22,18 +23,31 @@ import time
 
 from os import path, makedirs
 
+#model_setup: {obj_embedding:{use_obj_embedding, EIS, EOS} , attn_trans{use_attn_trans, }, lang_trans"{use_lang_trans,  }, contr_trans:{use_contr_trans, }, LSTM:{use_LSTM} }
+
+'''lang_trans:                    d_output = self.model_setup['lang_trans']['d_output'] #32
+                                d_model = self.model_setup['lang_trans']['d_model']   #42
+                                nhead = self.model_setup['lang_trans']['nhead']   #2
+                                nlayers = self.model_setup['lang_trans']['nlayers']   #2'''
+
+'''obj_embedding : EIS:30
+                EOS:10'''
+
+'''
+contr_trans:                 d_output = self.model_setup['contr_trans']['d_output'] #8
+                            d_model = self.model_setup['contr_trans']['d_model'] #210
+                            nhead   = self.model_setup['contr_trans']['nhead'] #6
+                            nlayers = self.model_setup['contr_trans']['nlayers'] #4
+'''
 
 class PolicyTranslationModelTorch(nn.Module):
-    def __init__(self, od_path, glove_path, use_LSTM = False, use_lang_transformer = True, use_controller_transformer = True, use_obj_embedding = True, use_attn_transformer = True):
+    def __init__(self, od_path, glove_path, model_setup):
         super().__init__()
+        self.model_setup         = model_setup
         self.units               = 32
         self.output_dims         = 7
         self.basis_functions     = 11
         self.ptgloabl_units      = 42
-        self.use_lang_trans      = use_lang_transformer
-        self.use_controller_transformer = use_controller_transformer
-        self.use_obj_embedding = use_obj_embedding
-        self.use_attn_transformer = use_attn_transformer
 
         if od_path != "":                
             od_path    = pathlib.Path(od_path)/"saved_model" 
@@ -41,21 +55,18 @@ class PolicyTranslationModelTorch(nn.Module):
             self.frcnn = self.frcnn.signatures['serving_default']
             self.frcnn.trainable = False
 
-        if use_obj_embedding:
+        if model_setup['obj_embedding']['use_obj_embedding']:
             self.obj_embedding = None
-        if use_attn_transformer:
+        if model_setup['attn_trans']['use_attn_trans']:
             self.attention = None
         else:
             self.attention = TopDownAttentionTorch(units=64)
 
 
         self.embedding = GloveEmbeddings(file_path=glove_path)
-        if use_lang_transformer:
-            self.lang_trans  = None
-            self.trans_d_hid = 42
-            self.nhead       = 2
-            self.nlayers     = 2
+        if model_setup['lang_trans']['use_lang_trans']:
             self.transformer_seq_embedding = None
+            self.lang_trans  = None
         else:
             self.lng_gru   = None
 
@@ -63,7 +74,7 @@ class PolicyTranslationModelTorch(nn.Module):
         self.dout      = nn.Dropout(p=0.25)
 
         # Units needs to be divisible by 7
-        if use_controller_transformer:
+        if model_setup['contr_trans']['use_contr_trans']:
             self.controller_transformer = None
         else:
             self.dmp_dt_model = None
@@ -72,7 +83,7 @@ class PolicyTranslationModelTorch(nn.Module):
                 dimensions=self.output_dims,
                 basis_functions=self.basis_functions,
                 cnfeatures_size=self.units + self.output_dims + 5,
-                use_LSTM = use_LSTM
+                use_LSTM = model_setup['LSTM']['use_LSTM'] 
             )
 
         self.last_language = None
@@ -83,9 +94,8 @@ class PolicyTranslationModelTorch(nn.Module):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
 
 
-    def forward(self, inputs, training=False, use_dropout=True, node = None, return_cfeature = False, gt_attention = None, train_embedding = True, return_gen_gen=False):
+    def forward(self, inputs, training=False, return_cfeature = False, gt_attention = None, train_embedding = True, return_gen_gen=False):
         if training:
-            use_dropout = True
             gt_attention = None
 
         language_in   = inputs[0]
@@ -97,9 +107,14 @@ class PolicyTranslationModelTorch(nn.Module):
             language  = self.embedding(language_in_tf)
 
             language = torch.tensor(language.numpy(), device=inputs[1].device)
-            if self.use_lang_trans:
+            if self.model_setup['lang_trans']['use_lang_trans']:
                 if self.lang_trans is None:
-                    self.lang_trans = TransformerModel(ntoken=language.size(-1), d_output=self.units, d_model=self.trans_d_hid, nhead=self.nhead, d_hid=self.trans_d_hid, nlayers=self.nlayers)
+                    d_output = self.model_setup['lang_trans']['d_output'] #32
+                    d_model = self.model_setup['lang_trans']['d_model']   #42
+                    nhead = self.model_setup['lang_trans']['nhead']   #2
+                    nlayers = self.model_setup['lang_trans']['nlayers']   #2
+
+                    self.lang_trans = TransformerModel(ntoken=language.size(-1), d_output=d_output, d_model=d_model, nhead=nhead, d_hid=d_model, nlayers=nlayers)
                     self.lang_trans.to(language.device)
                 language = self.lang_trans(language.transpose(0,1)) #size: S, N, D
                 #print(f'language after trans: {language.shape}')
@@ -118,9 +133,11 @@ class PolicyTranslationModelTorch(nn.Module):
 
             features   = inputs[1]                          #16x6x5 first entry is object class
             # Calculate attention and expand it to match the feature size
-            if self.use_obj_embedding:
+            if self.model_setup['obj_embedding']['use_obj_embedding']:
                 if self.obj_embedding is None:
-                    self.obj_embedding = nn.Embedding(30, 10).to(features.device)
+                    eis = self.model_setup['obj_embedding']['EIS'] #30
+                    eos = self.model_setup['obj_embedding']['EOS'] #10
+                    self.obj_embedding = nn.Embedding(eis, eos).to(features.device)
                 if train_embedding:
                     obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))   #16x10
                 else:
@@ -129,7 +146,7 @@ class PolicyTranslationModelTorch(nn.Module):
                 obj_feature_embedding = torch.cat((features[:,:,1:], obj_feature_embedding), dim = -1)
             else:
                 obj_feature_embedding = features
-            if self.attention is None and self.use_attn_transformer:
+            if self.attention is None and self.model_setup['attn_trans']['use_attn_trans']:
                 self.attention = TransformerAttention(device = features.device)
             self.atn = self.attention((self.language, obj_feature_embedding))
             if gt_attention is None:
@@ -140,32 +157,22 @@ class PolicyTranslationModelTorch(nn.Module):
 
             counter = torch.arange(features.size(0))
             self.cfeatures_max = obj_feature_embedding[(counter, main_obj)]           #16x5
-            #print(f'cfeatures: {features[0]}')
-        # local      = features[:,:,:5]
+
         robot      = inputs[2]                           #16x350x7
-        # dmp_state  = inputs[3]
-
-
-        '''atn_w = atn.unsqueeze(2)
-        atn_w = atn_w.repeat([1,1,5])
-        # Compress image features and apply attention
-        cfeatures = atn_w * features
-        cfeatures = cfeatures.sum(axis=1)'''
 
         # Add the language to the mix again. Possibly usefull to predict dt
 
-        if self.use_controller_transformer:
+        if self.model_setup['contr_trans']['use_contr_trans'] :
             cfeatures = torch.cat((self.cfeatures_max, self.language), axis=1)   #16x46
-            #print(f'cfeatures after cat: {cfeatures.shape}')
             cfeatures = cfeatures.unsqueeze(1).repeat(1,robot.size(1),1)         #16x350x46
-            #print(f'cfeatures after repeat: {cfeatures.shape}')
             inpt_seq = torch.cat((cfeatures, robot), dim = -1)          #16x350x53
-            #print(f'inpt_seq: {inpt_seq.shape}')
 
             if self.controller_transformer is None:
-                #d_output = 8, 1:7 = robot, 8 = phase 
-                d_model = 210
-                self.controller_transformer = ControllerTransformer(ntoken=53, d_output=8, d_model=d_model, nhead=6, d_hid=d_model, nlayers=4).to(inpt_seq.device)
+                d_output = self.model_setup['contr_trans']['d_output'] #8
+                d_model = self.model_setup['contr_trans']['d_model'] #210
+                nhead   = self.model_setup['contr_trans']['nhead'] #6
+                nlayers = self.model_setup['contr_trans']['nlayers'] #4
+                self.controller_transformer = ControllerTransformer(ntoken=inpt_seq.size(-1), d_output=d_output, d_model=d_model, nhead=nhead, d_hid=d_model, nlayers=nlayers).to(inpt_seq.device)
                 self.trans_seq_len = max(inpt_seq.size(1), 350)
             src_mask = generate_square_subsequent_mask(inpt_seq.size(1)).to(inpt_seq.device)
             #if inpt_seq.size(1) != self.trans_seq_len:
@@ -238,3 +245,5 @@ class PolicyTranslationModelTorch(nn.Module):
         if not path.exists(path_to_file):
             makedirs(path_to_file)
         torch.save(self.state_dict(), path_to_file + "policy_translation_h")
+        with open(path_to_file + 'model_setup.pkl', 'wb') as f:
+            pickle.dump(self.model_setup, f)  

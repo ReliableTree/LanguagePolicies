@@ -65,7 +65,7 @@ TRAIN_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDatase
 VAL_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/val_data_torch.txt'
 
 MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/g5jjl2j8KLk/best/policy_translation_h'
-
+MODEL_SETUP  = '~/Documents/master_project/LokalData/Data/Model/GZOqDDnGAzr/best/model_setup.pkl'
 
 from torch.utils.data import DataLoader
 from utils.convertTFDataToPytorchData import TorchDataset
@@ -79,7 +79,9 @@ else:
 
 # should not use network.savedict.....
 def setup_model(device = 'cpu', batch_size = 1000):
-    model   = PolicyTranslationModelTorch(od_path=FRCNN_PATH, glove_path=GLOVE_PATH).to(device)
+    with open(MODEL_SETUP, 'rb') as f:
+        model_setup = pickle.load(f)
+    model   = PolicyTranslationModelTorch(od_path=FRCNN_PATH, glove_path=GLOVE_PATH, model_setup=model_setup).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 

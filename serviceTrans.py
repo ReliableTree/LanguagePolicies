@@ -62,6 +62,8 @@ TRAIN_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDatase
 VAL_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/val_data_torch.txt'
 
 MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/transModel/best/policy_translation_h'
+MODEL_SETUP  = '/home/hendrik/Documents/master_project/LokalData/Data/Model/lOo4AR4jWYg/best/model_setup.pkl'
+
 
 from torch.utils.data import DataLoader
 from utils.convertTFDataToPytorchData import TorchDataset
@@ -75,7 +77,9 @@ else:
 
 # should not use network.savedict.....
 def setup_model(device = 'cpu', batch_size = 2):
-    model   = PolicyTranslationModelTorch(od_path=FRCNN_PATH, glove_path=GLOVE_PATH).to(device)
+    with open(MODEL_SETUP, 'rb') as f:
+        model_setup = pickle.load(f)
+    model   = PolicyTranslationModelTorch(od_path=FRCNN_PATH, glove_path=GLOVE_PATH, model_setup=model_setup).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
@@ -232,7 +236,7 @@ class NetworkService():
         h = time.perf_counter()
         with torch.no_grad():
             self.model.train()
-            generated, atn, phase = self.model(self.input_data, training=False, use_dropout=True, node = self.node, return_cfeature = False)
+            generated, atn, phase = self.model(self.input_data, training=False, return_cfeature = False)
         #print(f'time for one call: {time.perf_counter() - h}')
         #print(f'atn : {atn}')
         self.trj_gen    = generated.mean(axis=0).cpu().numpy()

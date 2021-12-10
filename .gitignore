@@ -2,6 +2,7 @@
 *.pyc
 
 Data/
+eval_plots/
 TestData/3lxZ2WJXopn_2.json
 TestData/3lxZ2WJXopn_1.json
 TestData/2RwYv5xnw0M_2.json

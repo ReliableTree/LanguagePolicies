@@ -73,7 +73,7 @@ class NetworkTorch(nn.Module):
             teb = rel_epoch < 0.3
             print(f'train ambedding: {teb}')
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                if step % 1 == 0:
+                if step % 100 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False)                    
                 train_loss.append(self.step(d_in, d_out, train=True, train_embedding=teb))
                 
@@ -119,7 +119,9 @@ class NetworkTorch(nn.Module):
         in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[50,1,1]))
         in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[50,1,1]))
         d_in_graphs  = (in0, in1, in2)
-        out_model = self.model(d_in_graphs, training=True, use_dropout=True, return_gen_gen=True)
+        #self.model.eval()
+        out_model = self.model(d_in_graphs, training=True, return_gen_gen=True)
+        #self.model.eval()
         #out_model_tf = [self.torch2tf(out_model[0]), [self.torch2tf(ele) for ele in out_model[1]]]
         #d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
         #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))

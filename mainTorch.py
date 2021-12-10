@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from utils.convertTFDataToPytorchData import TorchDataset
 from prettytable import PrettyTable
 import sys
+import pickle
 
 
 
@@ -34,6 +35,8 @@ WEIGHT_PHS      = 50 #1.0
 
 WEIGHT_FOD      = 0
 
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
 def count_parameters(model):
     table = PrettyTable(["Modules", "Parameters"])
@@ -56,8 +59,8 @@ def init_weights(network):
         elif 'weight' in para_name:
             torch.nn.init.orthogonal_(para)
 
-def setupModel(device = 'cuda', epochs = 1,  batch_size = 100, path_dict = None, logname = None, model_path=None, tboard=None):
-    model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], use_LSTM=False).to(device)
+def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, tboard, model_setup):
+    model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], model_setup=model_setup).to(device)
     #print(path_dict['TRAIN_DATA_TORCH'])
     train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
@@ -86,7 +89,6 @@ if __name__ == '__main__':
         path_dict = {
         'TRAIN_DATA_TORCH' : os.path.join(data_path, 'TorchDataset/train_data_torch.txt'),
         'VAL_DATA_TORCH' : os.path.join(data_path, 'TorchDataset/val_data_torch.txt'),
-        'MODEL_PATH' : os.path.join(data_path, 'TorchDataset/test_model.pth'),
         'TRAIN_DATA' : os.path.join(data_path, 'GDrive/train.tfrecord'),
         'VAL_DATA' : os.path.join(data_path, 'GDrive/validate.tfrecord'),
         'GLOVE_PATH' : os.path.join(data_path, 'GDrive/glove.6B.50d.txt'),
@@ -97,9 +99,36 @@ if __name__ == '__main__':
         if '-device' in args:
             device = args[args.index('-device') + 1]
 
+        model_setup = {
+            'obj_embedding': {'use_obj_embedding':True, 'EIS':30, 'EOS':10},
+            'attn_trans' : {'use_attn_trans':True},
+            'lang_trans' :  {
+                'use_lang_trans' : True,
+                'd_output' : 32,
+                'd_model'  : 42,
+                'nhead'    : 1,
+                'nlayers'  : 1
+            },
+            'contr_trans': {
+                'use_contr_trans':True,
+                'd_output'   : 8,
+                'd_model'    : 304,
+                'nhead'      : 8,
+                'nlayers'    : 4
+            },
+            'LSTM':{
+                'use_LSTM' : False
+            }
+        }
+
         model_path = None
         if '-model' in args:
-            model_path = args[args.index('-model') + 1]
+            model_path = args[args.index('-model') + 1] + 'policy_translation_h'
+            if '-model_setup' in args:
+                setup_path = args[args.index('-model') + 1] + 'model_setup.pkl'
+                with open(setup_path, 'rb') as f:
+                    model_setup = pickle.load(f)
+                print('load model')
 
         epochs = 200
         if '-epochs' in args:
@@ -114,9 +143,27 @@ if __name__ == '__main__':
             tboard = (args[args.index('-tboard') + 1]) == 'T'
             print(f'tboard: {tboard}')
 
+
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
-        network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard)
+        print(f'logname: {logname}')
+        network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard, model_setup=model_setup)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 
+
+#model_setup: {obj_embedding:{use_obj_embedding, EIS, EOS} , attn_trans{use_attn_trans, }, lang_trans"{use_lang_transformer,  }, contr_trans:{use_contr_trans, }, LSTM:{use_LSTM} }
+
+'''lang_trans:                    d_output = self.model_setup['lang_trans']['d_output'] #32
+                                d_model = self.model_setup['lang_trans']['d_model']   #42
+                                nhead = self.model_setup['lang_trans']['nhead']   #2
+                                nlayers = self.model_setup['lang_trans']['nlayers']   #2'''
+
+'''obj_embedding : EIS:30
+                EOS:10'''
+
+'''
+contr_trans:                 d_output = self.model_setup['contr_trans']['d_output'] #8
+                            d_model = self.model_setup['contr_trans']['d_model'] #210
+                            nhead   = self.model_setup['contr_trans']['nhead'] #6
+                            nlayers = self.model_setup['contr_trans']['nlayers'] #4'''
