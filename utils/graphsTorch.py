@@ -202,7 +202,7 @@ class TBoardGraphsTorch():
         
         return result
 
-    def plotDMPTrajectory(self, y_true, y_pred, y_pred_std = None, phase= None, dt= None, p_dt= None, stepid= None, name = "Trajectory", save = False, name_plot = None):
+    def plotDMPTrajectory(self, y_true, y_pred, y_pred_std = None, phase= None, dt= None, p_dt= None, stepid= None, name = "Trajectory", save = False, name_plot = None, path=None):
         tf_y_true = self.torch2tf(y_true)
         tf_y_pred = self.torch2tf(y_pred)
         tf_phase = self.torch2tf(phase)
@@ -245,7 +245,9 @@ class TBoardGraphsTorch():
 
         result = np.expand_dims(self.finishFigure(fig), 0)
         if save:
-            plt.savefig('eval_plots/' + name_plot + '.png')
+            if not os.path.exists(path):
+                os.makedirs(path)
+            plt.savefig(path + name_plot + '.png')
         plt.close()
         if not save:
             with self.__tboard_validation.as_default():

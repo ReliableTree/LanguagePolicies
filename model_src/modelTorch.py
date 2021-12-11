@@ -182,16 +182,19 @@ class PolicyTranslationModelTorch(nn.Module):
 
             #result from gt:
             if recursive:
-                generated_recursive = None
-                for step in range(inpt_seq.size(1)):
-                    res = self.controller_transformer(generated_recursive, src_mask = src_mask[:(step+1), :(step + 1)])[-1].unsqueeze(0) #1x16x8
-                    generated_recursive = torch.cat((generated_recursive, res), dim=0) 
-                if generated_recursive is None:
-                    generated_recursive = res
-                else:
-                    generated_recursive = torch.cat((generated_recursive, res), dim=0)
+                generated_recursive = inpt_seq[:,:1].transpose(0,1) #1x16x53
+                for step in range(inpt_seq.size(1) - 1):
+                    if step < (inpt_seq.size(1) - 2):
+                        with torch.no_grad():
+                            res = self.controller_transformer(generated_recursive, src_mask = src_mask[:(step+1), :(step + 1)])[-1].unsqueeze(0) #1x16x8
+                    else:
+                        res = self.controller_transformer(generated_recursive, src_mask = src_mask[:(step+1), :(step + 1)])[-1].unsqueeze(0) #1x16x8
+
+                    #print(f'res:{res.shape}')
+                    #print(f'cfeatures[:,:1].transpose(0,1): {cfeatures[:,:1].transpose(0,1).shape}')
+                    n_state = torch.cat((cfeatures[:,:1].transpose(0,1), res[:,:,:7]), dim = -1)
+                    generated_recursive = torch.cat((generated_recursive, n_state), dim=0) 
                 generated_from_gt = generated_recursive.transpose(0,1)
-                print(f'generated recursive shape: {generated_from_gt.shape}')
             else:
                 generated_from_gt = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask)  #350x16x8
                 generated_from_gt = generated_from_gt.transpose(0,1)                              #16x350x8

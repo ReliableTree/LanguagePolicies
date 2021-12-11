@@ -65,7 +65,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     eval_data = TorchDataset(path = path_dict['VAL_DATA_TORCH'], device=device)
-    eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
+    eval_loader = DataLoader(eval_data, batch_size=10*batch_size, shuffle=True)
     network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=WEIGHT_FOD, gamma_sl = 1, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
@@ -112,8 +112,8 @@ if __name__ == '__main__':
             'contr_trans': {
                 'use_contr_trans':True,
                 'd_output'   : 8,
-                'd_model'    : 304,
-                'nhead'      : 8,
+                'd_model'    : 210,
+                'nhead'      : 6,
                 'nlayers'    : 4
             },
             'LSTM':{

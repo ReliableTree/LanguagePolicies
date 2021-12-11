@@ -1,12 +1,13 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
 from __future__ import absolute_import, division, print_function, unicode_literals
-from os import path
+from os import name, path
 from pickle import NONE
 import tensorflow as tf
 import sys
 import numpy as np
 from torch._C import dtype
+from torch.serialization import save
 from utils.graphsTorch import TBoardGraphsTorch
 import tensorflow as tf
 
@@ -73,9 +74,9 @@ class NetworkTorch(nn.Module):
             teb = rel_epoch < 0.3
             print(f'train ambedding: {teb}')
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                if step % 100 == 0:
-                    validation_loss = self.runValidation(quick=True, pnt=False)                    
-                train_loss.append(self.step(d_in, d_out, train=True, train_embedding=teb))
+                if step % 400 == 0:
+                    validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False)                    
+                train_loss.append(self.step(d_in, d_out, train=True, train_embedding=teb, recursive=True))
                 
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
@@ -83,7 +84,8 @@ class NetworkTorch(nn.Module):
                 self.global_step += 1
             self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
 
-            self.runValidation(quick=False)
+            if (epoch + 1) % 4 == 0:
+                self.runValidation(quick=False, epoch=epoch, save=True)
             self.scheduler.step()
             print(f'learning rate: {self.scheduler.get_last_lr()[0]}')
 
@@ -107,41 +109,60 @@ class NetworkTorch(nn.Module):
             return torch.tensor(inpt.numpy(), device= self.device)
         else:
             return None
-    def runValidation(self, quick=False, pnt=True): 
-        if not quick:
-            print("Running full validation...")
-        val_loss = []
-        for step, (d_in, d_out) in enumerate(self.val_ds):
-            val_loss.append(self.step(d_in, d_out, train=False, recursive = True))
-            if quick:
-                break
-        in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[50,1]))
-        in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[50,1,1]))
-        in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[50,1,1]))
-        d_in_graphs  = (in0, in1, in2)
-        #self.model.eval()
-        out_model = self.model(d_in_graphs, training=True, return_gen_gen=True)
-        #self.model.eval()
-        #out_model_tf = [self.torch2tf(out_model[0]), [self.torch2tf(ele) for ele in out_model[1]]]
-        #d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
-        #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
-        if self.use_tboard:
-            self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
-                            (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                            out_model,
-                            save=True)
-        loss = np.mean(val_loss)
-        if pnt:
-            print("  Validation Loss: {:.6f}".format(loss))
-        if not quick:
-            if loss < self.global_best_loss_val:
-                self.global_best_loss_val = loss
-                if self.use_tboard:
-                    self.model.saveModelToFile(add=self.logname + "/best_val/", data_path= self.data_path)
-                print(f'best val model saved with: {loss}')
-        return np.mean(val_loss)
+    def runValidation(self, quick=False, pnt=True, epoch = 0, save = False): 
+        with torch.no_grad():
+            if not quick:
+                print("Running full validation...")
+            val_loss = []
+            for step, (d_in, d_out) in enumerate(self.val_ds):
+                loss = self.step(d_in, d_out, train=False, recursive = True)
+                val_loss.append(loss)
+                if quick:
+                    break
 
-    def step(self, d_in, d_out, train, train_embedding = True, recursive = False):
+            if self.use_tboard:
+                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[50,1]))
+                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[50,1,1]))
+                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[50,1,1]))
+                d_in_graphs  = (in0, in1, in2)
+                out_model = self.model(d_in_graphs, training=True, return_gen_gen=True, recursive = True)
+                self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
+                                (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
+                                out_model,
+                                save=save,
+                                name_plot = 'recursive_' + str(step),
+                                epoch=epoch)
+                                
+                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[50,1]))
+                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[50,1,1]))
+                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[50,1,1]))
+                d_in_graphs  = (in0, in1, in2)
+                out_model = self.model(d_in_graphs, training=True, return_gen_gen=True)
+                self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
+                                (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
+                                out_model,
+                                save=save,
+                                name_plot = str(step),
+                                epoch=epoch)
+
+
+            #self.model.eval()
+            #out_model_tf = [self.torch2tf(out_model[0]), [self.torch2tf(ele) for ele in out_model[1]]]
+            #d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
+            #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
+
+            loss = np.mean(val_loss)
+            if pnt:
+                print("  Validation Loss: {:.6f}".format(loss))
+            if not quick:
+                if loss < self.global_best_loss_val:
+                    self.global_best_loss_val = loss
+                    if self.use_tboard:
+                        self.model.saveModelToFile(add=self.logname + "/best_val/", data_path= self.data_path)
+                    print(f'best val model saved with: {loss}')
+            return np.mean(val_loss)
+
+    def step(self, d_in, d_out, train, train_embedding = True, recursive = False, return_result = False):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
         if not train:
             self.model.eval()
@@ -195,7 +216,10 @@ class NetworkTorch(nn.Module):
                         self.model.saveModelToFile(add=self.logname + "/best/", data_path= self.data_path)
                     #print(f'model saved with loss: {loss}')
 
-        return loss.detach().cpu().numpy()
+        if return_result:
+            return loss.detach().cpu().numpy(), result
+        else:
+            return loss.detach().cpu().numpy()
     
     def interpolateTrajectory(self, trj, target):
         batch_size     = trj.shape[0]
@@ -276,7 +300,7 @@ class NetworkTorch(nn.Module):
             print("")
         sys.stdout.flush()
 
-    def createGraphs(self, d_in, d_out, result, save = False):
+    def createGraphs(self, d_in, d_out, result, save = False, name_plot = '', epoch = 0):
         language, image, robot_states            = d_in
         target_trj, attention, delta_t, weights  = d_out
         if not self.use_transformer:
@@ -293,13 +317,14 @@ class NetworkTorch(nn.Module):
             self.tboard.plotDMPTrajectory(target_trj, self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(gen_trj), axis=0)),
                                         self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0)), delta_t, self.tf2torch(tf.math.reduce_mean(self.torch2tf(dmp_dt), axis=0)), stepid=self.global_step)
         else:
+            path_to_plots = self.data_path + "/plots/"+ str(self.logname) + '/' + str(epoch) + '/'
             gen_tr_trj= self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0))
             gen_gen_trj= self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_gen_trj), axis=0))
             gen_tr_phase = self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0))
             self.tboard.plotDMPTrajectory(target_trj, gen_tr_trj, torch.zeros_like(gen_tr_trj),
-                                        gen_tr_phase, delta_t, None, stepid=self.global_step, save=save)
+                                        gen_tr_phase, delta_t, None, stepid=self.global_step, save=save, name_plot=name_plot, path=path_to_plots)
             self.tboard.plotDMPTrajectory(target_trj, gen_gen_trj, torch.zeros_like(gen_gen_trj),
-                                        gen_tr_phase, delta_t, None, stepid=self.global_step, name='Gen - Trajectoy', save=save)
+                                        gen_tr_phase, delta_t, None, stepid=self.global_step, name='Gen - Trajectoy', save=save, name_plot='gengen_' + name_plot, path=path_to_plots)
 
                 
 
