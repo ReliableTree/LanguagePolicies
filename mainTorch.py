@@ -124,7 +124,8 @@ if __name__ == '__main__':
             'LSTM':{
                 'use_LSTM' : False
             },
-            'quick_val':False
+            'quick_val':False,
+            'val_every' : 1
         }
         model_path = None
         if '-model' in args:

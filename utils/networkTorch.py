@@ -85,7 +85,7 @@ class NetworkTorch(nn.Module):
                 self.global_step += 1
             self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
 
-            if (epoch + 1) % 1 == 0:
+            if (epoch + 1) % model_params['val_every'] == 0:
                 self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params)
             self.scheduler.step()
             print(f'learning rate: {self.scheduler.get_last_lr()[0]}')
