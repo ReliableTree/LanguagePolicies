@@ -76,6 +76,8 @@ class PolicyTranslationModelTorch(nn.Module):
         # Units needs to be divisible by 7
         if model_setup['contr_trans']['use_contr_trans']:
             self.controller_transformer = None
+            count_emb_dim = model_setup['contr_trans']['count_emb_dim']
+            self.count_embedding = nn.Embedding(350, count_emb_dim)
         else:
             self.dmp_dt_model = None
             self.controller = FeedBackControllerTorch(
@@ -94,7 +96,7 @@ class PolicyTranslationModelTorch(nn.Module):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
 
 
-    def forward(self, inputs, training=False, return_cfeature = False, gt_attention = None, train_embedding = True, return_gen_gen=False, recursive = False):
+    def forward(self, inputs, training=False, return_cfeature = False, gt_attention = None, model_params = None):
         if training:
             gt_attention = None
 
@@ -138,7 +140,7 @@ class PolicyTranslationModelTorch(nn.Module):
                     eis = self.model_setup['obj_embedding']['EIS'] #30
                     eos = self.model_setup['obj_embedding']['EOS'] #10
                     self.obj_embedding = nn.Embedding(eis, eos).to(features.device)
-                if train_embedding:
+                if model_params['obj_embedding']['train_embedding']:
                     obj_feature_embedding = self.obj_embedding(features[:,:,0].to(dtype=torch.int32))   #16x10
                 else:
                     with torch.no_grad():
@@ -159,13 +161,27 @@ class PolicyTranslationModelTorch(nn.Module):
             self.cfeatures_max = obj_feature_embedding[(counter, main_obj)]           #16x5
 
         robot      = inputs[2]                           #16x350x7
+        robot_first_state = robot[:,:1].repeat(1, 350,1) #16x350x7                    #
+        counter = torch.arange(350, device=robot.device)
+        if model_params['contr_trans']['use_counter_embedding']:
+            if model_params['obj_embedding']['train_embedding']:
+                ce = self.count_embedding(counter).unsqueeze(0).repeat((robot.size(0), 1, 1)) #16x350x20
+            else:
+                with torch.no_grad():
+                    ce = self.count_embedding(counter).unsqueeze(0).repeat((robot.size(0), 1, 1)) #16x350x20
+        else:
+            counter = counter/200
+            ce = counter.reshape(1,-1,1)
+            
+            ce = ce.repeat((robot.size(0), 1, 1))
+        robot_first_state = torch.cat((robot_first_state, ce), dim=-1)
 
         # Add the language to the mix again. Possibly usefull to predict dt
 
         if self.model_setup['contr_trans']['use_contr_trans'] :
             cfeatures = torch.cat((self.cfeatures_max, self.language), axis=1)   #16x46
             cfeatures = cfeatures.unsqueeze(1).repeat(1,robot.size(1),1)         #16x350x46
-            inpt_seq = torch.cat((cfeatures, robot), dim = -1)          #16x350x53
+            inpt_seq = torch.cat((cfeatures, robot_first_state), dim = -1)          #16x350x53 + 20
 
             if self.controller_transformer is None:
                 d_output = self.model_setup['contr_trans']['d_output'] #8
@@ -174,14 +190,11 @@ class PolicyTranslationModelTorch(nn.Module):
                 nlayers = self.model_setup['contr_trans']['nlayers'] #4
                 self.controller_transformer = ControllerTransformer(ntoken=inpt_seq.size(-1), d_output=d_output, d_model=d_model, nhead=nhead, d_hid=d_model, nlayers=nlayers).to(inpt_seq.device)
                 self.trans_seq_len = max(inpt_seq.size(1), 350)
+
             src_mask = generate_square_subsequent_mask(inpt_seq.size(1)).to(inpt_seq.device)
-            #if inpt_seq.size(1) != self.trans_seq_len:
-            #    src_mask = self.src_mask[:inpt_seq.size(1), :inpt_seq.size(1)]
-            #else:
-                #src_mask = self.src_mask
 
             #result from gt:
-            if recursive:
+            if model_params['contr_trans']['recursive']:
                 generated_recursive = inpt_seq[:,:1].transpose(0,1) #1x16x53
                 for step in range(inpt_seq.size(1) - 1):
                     if step < (inpt_seq.size(1) - 2):
@@ -189,21 +202,20 @@ class PolicyTranslationModelTorch(nn.Module):
                             res = self.controller_transformer(generated_recursive, src_mask = src_mask[:(step+1), :(step + 1)])[-1].unsqueeze(0) #1x16x8
                     else:
                         res = self.controller_transformer(generated_recursive, src_mask = src_mask[:(step+1), :(step + 1)])[-1].unsqueeze(0) #1x16x8
-
-                    #print(f'res:{res.shape}')
-                    #print(f'cfeatures[:,:1].transpose(0,1): {cfeatures[:,:1].transpose(0,1).shape}')
                     n_state = torch.cat((cfeatures[:,:1].transpose(0,1), res[:,:,:7]), dim = -1)
                     generated_recursive = torch.cat((generated_recursive, n_state), dim=0) 
                 generated_from_gt = generated_recursive.transpose(0,1)
             else:
-                generated_from_gt = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask)  #350x16x8
+                if model_params['contr_trans']['use_mask']:
+                    generated_from_gt = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask)  #350x16x8
+                else:
+                    generated_from_gt = self.controller_transformer(inpt_seq.transpose(0,1), src_mask=None)
                 generated_from_gt = generated_from_gt.transpose(0,1)                              #16x350x8
 
             #result from generated:
-            if return_gen_gen:
+            if model_params['contr_trans']['use_gen2']:
                 with torch.no_grad():
                     generated_for_generation = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask).transpose(0,1)      #350x16x8
-
                 generated_trj_for_generation = generated_for_generation[:,:,:7]
                 inpt_seq_generated = torch.cat((cfeatures, generated_trj_for_generation), dim = -1)
                 generated_from_generated = self.controller_transformer(inpt_seq_generated.transpose(0,1), src_mask = src_mask).transpose(0,1) 
@@ -211,37 +223,6 @@ class PolicyTranslationModelTorch(nn.Module):
             else:
                 return generated_from_gt[:,:,:7], self.atn, generated_from_gt[:,:,7]
 
-        else:
-            start_joints  = robot[:,0,:]
-            cfeatures = torch.cat((self.cfeatures_max, self.language, start_joints), axis=1)
-
-            #cfeatures = tf.keras.backend.concatenate((cfeatures, language, start_joints), axis=1)
-
-            # Policy Translation: Create weight + goal for DMP
-            if self.dmp_dt_model is None:
-                self.dmp_dt_model = dmp_dt_torch(ptgloabl_units=self.ptgloabl_units, units=self.units)
-                self.dmp_dt_model.build_dmp_dt_model(cfeatures)
-            #print(f'cfeatures: {cfeatures.shape}')
-
-            dmp_dt = self.dmp_dt_model.dmp_model(inpt = cfeatures, use_dropout=False)
-            #print(f'dmp_dt: {dmp_dt}')
-            if (len(inputs) > 3) and (inputs[3] is not None): #inputs includes Last_GRU_State
-                last_gru_state = inputs[3]
-            else:
-                #last_gru_state = torch.zeros((batch_size, self.units), dtype=torch.float32, device=dmp_dt.device)
-                last_gru_state = None
-
-            # Run the low-level controller
-            initial_state = [
-                start_joints,
-                last_gru_state
-            ]
-            generated, phase, weights, last_gru_state = self.controller.forward(seq_inputs=robot, states=initial_state, constants=(cfeatures, dmp_dt), training=training)
-
-            if return_cfeature:
-                return generated, (self.atn, dmp_dt, phase, weights, cfeatures, last_gru_state)
-            else:
-                return generated, (self.atn , dmp_dt, phase, weights)
     
     def getVariables(self, step=None):
         return self.parameters()

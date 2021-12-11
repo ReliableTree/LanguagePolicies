@@ -69,7 +69,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=WEIGHT_FOD, gamma_sl = 1, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
-    network.setup_model()
+    network.setup_model(model_params=model_setup)
     if model_path is not None:
         model.load_state_dict(torch.load(model_path, map_location='cuda:0'))
     #init_weights(network)
@@ -77,7 +77,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
     #print(f'number of param,eters in net: {len(list(network.parameters()))} and number of applied: {i}')
     #network.load_state_dict(torch.load(MODEL_PATH), strict=True)
-    network.train(epochs=epochs, use_transformer=True)
+    network.train(epochs=epochs, model_params=model_setup)
     return network
 import os
 if __name__ == '__main__':
@@ -100,7 +100,7 @@ if __name__ == '__main__':
             device = args[args.index('-device') + 1]
 
         model_setup = {
-            'obj_embedding': {'use_obj_embedding':True, 'EIS':30, 'EOS':10},
+            'obj_embedding': {'use_obj_embedding':True, 'train_embedding':True, 'EIS':30, 'EOS':10},
             'attn_trans' : {'use_attn_trans':True},
             'lang_trans' :  {
                 'use_lang_trans' : True,
@@ -114,13 +114,18 @@ if __name__ == '__main__':
                 'd_output'   : 8,
                 'd_model'    : 210,
                 'nhead'      : 6,
-                'nlayers'    : 4
+                'nlayers'    : 4,
+                'recursive'    : False,
+                'use_gen2'     : False,
+                'use_mask'     : False,
+                'use_counter_embedding': False,
+                'count_emb_dim' : 20
             },
             'LSTM':{
                 'use_LSTM' : False
-            }
+            },
+            'quick_val':False
         }
-
         model_path = None
         if '-model' in args:
             model_path = args[args.index('-model') + 1] + 'policy_translation_h'
@@ -143,6 +148,10 @@ if __name__ == '__main__':
             tboard = (args[args.index('-tboard') + 1]) == 'T'
             print(f'tboard: {tboard}')
 
+
+        if '-tboard' in args:
+            tboard = (args[args.index('-tboard') + 1]) == 'T'
+            print(f'tboard: {tboard}') 
 
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
