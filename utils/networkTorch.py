@@ -203,7 +203,7 @@ class NetworkTorch(nn.Module):
                     self.last_written_step = self.global_step
                     self.tboard.addValidationScalar("Loss", loss, self.global_step)
                     for para, value in debug_dict.items():
-                        self.tboard.addTrainScalar("Loss " + para, value, self.global_step)
+                        self.tboard.addValidationScalar("Loss " + para, value, self.global_step)
 
                 loss = loss.detach().cpu()
                 if loss < self.global_best_loss:
