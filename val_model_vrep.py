@@ -35,12 +35,13 @@ USE_SHAPE_SIZE      = True
 # (manual mode will allow you to generate environments and type in your own commands)
 RUN_ON_TEST_DATA    = True
 # How many of the 100 test-data do you want to test?
-NUM_TESTED_DATA     = 1
+NUM_TESTED_DATA     = 12
 # Where to find the normailization?
 NORM_PATH           = "/home/hendrik/Documents/master_project/LokalData/GDrive/normalization_v2.pkl"
 # Where to find the VRep scene file. This has to be an absolute path. 
 VREP_SCENE          = "/home/hendrik/Documents/master_project/LokalData/GDrive/NeurIPS2020.ttt"
 #VREP_SCENE          = os.getcwd() + "/" + VREP_SCENE
+PLOTS_PATH          = '/home/hendrik/Documents/master_project/LokalData/vrep_eval_plots/'
 
 class Simulator(object):
     def __init__(self, args=None):
@@ -531,11 +532,11 @@ class Simulator(object):
         data["phase_1"]     = e_data
         TBGT = TBoardGraphsTorch()
         for run, (name, run_data) in enumerate(data["phase_1"].items()):
-            TBGT.plotDMPTrajectory(y_true=torch.tensor(run_data['trajectory']['gt']), y_pred=torch.tensor(run_data['trajectory']['state']), save=True, name_plot = name + '_phase1_' + str(run))
+            TBGT.plotDMPTrajectory(y_true=torch.tensor(run_data['trajectory']['gt']), y_pred=torch.tensor(run_data['trajectory']['state']), save=True, name_plot = name + '_phase1_' + str(run), path=PLOTS_PATH)
         s_p2, e_data        = self.valPhase2(files)
         data["phase_2"]     = e_data
         for run, (name, run_data) in enumerate(data["phase_2"].items()):
-            TBGT.plotDMPTrajectory(y_true=torch.tensor(run_data['trajectory']['gt']), y_pred=torch.tensor(run_data['trajectory']['state']), save=True, name_plot = name  + '_phase2_'+ str(run))
+            TBGT.plotDMPTrajectory(y_true=torch.tensor(run_data['trajectory']['gt']), y_pred=torch.tensor(run_data['trajectory']['state']), save=True, name_plot = name  + '_phase2_'+ str(run), path=PLOTS_PATH)
 
         self.node.get_logger().info("Testing Picking: {}/{} ({:.1f}%)".format(s_p1,  runs, 100.0 * float(s_p1)/float(runs)))
         self.node.get_logger().info("Testing Pouring: {}/{} ({:.1f}%)".format(s_p2,  runs, 100.0 * float(s_p2)/float(runs)))

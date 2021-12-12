@@ -86,6 +86,7 @@ class NetworkTorch(nn.Module):
             self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
 
             if (epoch + 1) % model_params['val_every'] == 0:
+                print(f'logname: {self.logname}')
                 self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params)
             self.scheduler.step()
             print(f'learning rate: {self.scheduler.get_last_lr()[0]}')
@@ -259,15 +260,18 @@ class NetworkTorch(nn.Module):
             weight_loss = (weight_loss * loss_atn[:,:-1]).mean()
 
         repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
-        phs_loss = self.calculateMSEWithPaddingMask(phase, phs.squeeze(), loss_atn).mean()
+        #phs_loss = self.calculateMSEWithPaddingMask(phase, phs.squeeze(), loss_atn).mean()
+        phs_loss = ((phase-phs.squeeze())**2).mean()
         #trj_loss = ((generated- gen_trj)**2).mean()
         #trj_loss = trj_loss.mean()
         trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim)
-        trj_loss = (trj_loss * loss_atn).mean()
+        #trj_loss = (trj_loss * loss_atn).mean()
+        trj_loss = (trj_loss).mean()
 
         if model_params['contr_trans']['use_gen2']:
             trj_gen_loss = self.calculateMSEWithPaddingMask(generated, gen_gen_trj, repeated_weight_dim)
-            trj_gen_loss = (trj_gen_loss * loss_atn).mean()
+            #trj_gen_loss = (trj_gen_loss * loss_atn).mean()
+            trj_gen_loss = (trj_gen_loss).mean()
 
         if self.use_transformer:
             loss = atn_loss * self.lw_atn + \

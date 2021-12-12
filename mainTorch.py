@@ -65,7 +65,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     eval_data = TorchDataset(path = path_dict['VAL_DATA_TORCH'], device=device)
-    eval_loader = DataLoader(eval_data, batch_size=10*batch_size, shuffle=True)
+    eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
     network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=WEIGHT_FOD, gamma_sl = 1, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
@@ -119,7 +119,12 @@ if __name__ == '__main__':
                 'use_gen2'     : False,
                 'use_mask'     : False,
                 'use_counter_embedding': False,
-                'count_emb_dim' : 20
+                'count_emb_dim' : 20,
+                'plan_nn'       : {
+                    'use_plan_nn'   : True,
+                    'plan_outpt_dim' :20
+                }
+
             },
             'LSTM':{
                 'use_LSTM' : False
@@ -146,13 +151,8 @@ if __name__ == '__main__':
 
         tboard = True
         if '-tboard' in args:
-            tboard = (args[args.index('-tboard') + 1]) == 'T'
+            tboard = (args[args.index('-tboard') + 1]) == 'True'
             print(f'tboard: {tboard}')
-
-
-        if '-tboard' in args:
-            tboard = (args[args.index('-tboard') + 1]) == 'T'
-            print(f'tboard: {tboard}') 
 
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))

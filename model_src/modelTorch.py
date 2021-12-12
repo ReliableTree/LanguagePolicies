@@ -12,6 +12,7 @@ from model_src.glove import GloveEmbeddings
 from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
 from model_src.controllerTransformer import ControllerTransformer
 from model_src.transformerAttention import TransformerAttention
+from model_src.planNetwork import Plan_NN
 
 from utils.Transformer import TransformerModel
 from utils.Transformer import generate_square_subsequent_mask
@@ -89,6 +90,9 @@ class PolicyTranslationModelTorch(nn.Module):
             )
 
         self.last_language = None
+
+        if 'plan_nn' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['plan_nn']['use_plan_nn']:
+            self.plan_nn = None
 
 
 
@@ -180,8 +184,16 @@ class PolicyTranslationModelTorch(nn.Module):
 
         if self.model_setup['contr_trans']['use_contr_trans'] :
             cfeatures = torch.cat((self.cfeatures_max, self.language), axis=1)   #16x46
-            cfeatures = cfeatures.unsqueeze(1).repeat(1,robot.size(1),1)         #16x350x46
-            inpt_seq = torch.cat((cfeatures, robot_first_state), dim = -1)          #16x350x53 + 20
+            if 'plan_nn' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['plan_nn']['use_plan_nn']:
+                inpt_features = torch.cat((cfeatures, robot[:,0]), dim=-1) #16x46+7 = 16x53
+                if self.plan_nn is None:
+                    self.plan_nn = Plan_NN(inpt_features.size(-1), self.model_setup['contr_trans']['plan_nn']['plan_outpt_dim'] * 350).to(robot.device)
+                inpt_seq = self.plan_nn.forward(inpt_features)
+                inpt_seq = inpt_seq.reshape(robot.size(0), 350, -1)
+
+            else:
+                cfeatures = cfeatures.unsqueeze(1).repeat(1,robot_first_state.size(1),1)         #16x350x46
+                inpt_seq = torch.cat((cfeatures, robot_first_state), dim = -1)          #16x350x53 + 20
 
             if self.controller_transformer is None:
                 d_output = self.model_setup['contr_trans']['d_output'] #8

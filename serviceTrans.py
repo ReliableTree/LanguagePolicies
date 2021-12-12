@@ -61,8 +61,8 @@ TRAIN_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDatase
 
 VAL_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/val_data_torch.txt'
 
-MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/transModel/best/policy_translation_h'
-MODEL_SETUP  = '/home/hendrik/Documents/master_project/LokalData/Data/Model/lOo4AR4jWYg/best/model_setup.pkl'
+MODEL_PATH   = '/home/hendrik/fileTransfer/Data/Model/VmxGN3nlEKX/best_val/policy_translation_h'
+MODEL_SETUP  = '/home/hendrik/fileTransfer/Data/Model/VmxGN3nlEKX/best_val/model_setup.pkl'
 
 
 from torch.utils.data import DataLoader
@@ -88,7 +88,7 @@ def setup_model(device = 'cpu', batch_size = 2):
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
     network = NetworkTorch(model, data_path='/home/hendrik/Documents/master_project/LokalData', logname='LOGNAME', lr=LEARNING_RATE, lw_gen_trj = 0, lw_fod = 0,  lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
-    network.setup_model()
+    network.setup_model(model_params=model_setup)
     model.load_state_dict(torch.load(MODEL_PATH, map_location='cuda:0'))
     return model
 
@@ -105,6 +105,9 @@ class NetworkService():
         self.service_nn = self.node.create_service(NetworkPT,   "/network",      self.cbk_network_dmp_ros2)
         self.normalization = pickle.load(open(NORM_PATH, mode="rb"), encoding="latin1")
         self.last_GRU_state = None
+        with open(MODEL_SETUP, 'rb') as f:
+            self.model_setup = pickle.load(f)
+        self.trj_gen = None
         print("Ready")
 
     def runNode(self):
@@ -199,6 +202,7 @@ class NetworkService():
         if req.reset:
             self.req_step = 0
             self.sfp_history = []
+            self.trj_gen = None
             try:
                 image = self.imgmsg_to_cv2(req.image)
             except CvBridgeError as e:
@@ -234,17 +238,19 @@ class NetworkService():
         )
         #HENDRIK
         h = time.perf_counter()
-        with torch.no_grad():
-            self.model.train()
-            generated, atn, phase = self.model(self.input_data, training=False, return_cfeature = False)
-        #print(f'time for one call: {time.perf_counter() - h}')
-        #print(f'atn : {atn}')
-        self.trj_gen    = generated.mean(axis=0).cpu().numpy()
-        #print(f'trj_gen: {self.trj_gen.shape}')
+        if self.trj_gen is None:
+            with torch.no_grad():
+                self.model.train()
+                generated, self.atn, phase = self.model(self.input_data, training=False, return_cfeature = False, model_params =self.model_setup)
+            #print(f'time for one call: {time.perf_counter() - h}')
+            #print(f'atn : {atn}')
+            self.trj_gen    = generated.mean(axis=0).cpu().numpy()
+            #print(f'trj_gen: {self.trj_gen.shape}')
 
-        phase_value     = phase.mean()
+            self.phase_value     = phase.mean(axis=0).cpu().numpy()
         #print(f'phase: {phase_value}')
-
+        res_trj = self.trj_gen[:min(249, len(self.history))]
+        phase_value = self.phase_value[min(249, len(self.history))]
         if (phase_value > 0.95):# and len(self.sfp_history) > 100:
             #print(f'phase value: {phase_value}')
             np.save("history", self.history)
@@ -255,7 +261,7 @@ class NetworkService():
             dict_of_features = {
                 'prompt' : str(req.language),
                 #'cfeatures' : cfeatures[0].cpu().numpy(),
-                'attn' : atn.cpu().numpy(),
+                'attn' : self.atn.cpu().numpy(),
                 'features' : self.features
             }
             save_dict_of_features(dict_of_features, str(req.language))
@@ -263,7 +269,7 @@ class NetworkService():
             #save_cfeature(cfeatures[0].numpy(), str(req.language))
         
         self.req_step += 1
-        return (self.trj_gen.flatten().tolist(), [0.], 0, [0.], float(phase_value)) 
+        return (res_trj.flatten().tolist(), [0.], 0, [0.], float(phase_value)) 
     
     def idToText(self, id):
         names = ["", "Yellow Small Round", "Red Small Round", "Green Small Round", "Blue Small Round", "Pink Small Round",
