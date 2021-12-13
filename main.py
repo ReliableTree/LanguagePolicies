@@ -17,11 +17,11 @@ import numpy as np
 
 
 # Location of the training data
-TRAIN_DATA      = "../GDrive/train.tfrecord"
+TRAIN_DATA      = "~/Documents/master_project/LokalData/GDrive/train.tfrecord"
 # Location of the validation data
-VALIDATION_DATA = "../GDrive/validate.tfrecord"
+VALIDATION_DATA = "~/Documents/master_project/LokalData/GDrive/validate.tfrecord"
 # Location of the GloVe word embeddings
-GLOVE_PATH      = "../GDrive/glove.6B.50d.txt"
+GLOVE_PATH      = "~/Documents/master_project/LokalData/GDrive/glove.6B.50d.txt"
 # Learning rate for the adam optimizer
 LEARNING_RATE   = 0.0001
 # Weight for the attention loss
@@ -38,7 +38,7 @@ WEIGHT_PHS      = 1.0
 TRAIN_EPOCHS    = 200
 hid             = hashids.Hashids()
 LOGNAME         = hid.encode(int(time.time() * 1000000))
-MODEL_PATH   = "../GDrive/model/policy_translation"
+MODEL_PATH   = "~/Documents/master_project/LokalData/GDrive/model/policy_translation"
 
 
 #tf.enable_eager_execution()
@@ -60,7 +60,7 @@ class DatasetRSS():
 
         self.ds = tf.data.TFRecordDataset(record_path)
         self.ds = self.ds.map(self._parseFeatureDescriptor)
-        #self.ds = self.ds.shuffle(buffer_size=500)
+        self.ds = self.ds.shuffle(buffer_size=500)
         self.ds = self.ds.batch(batch_size, drop_remainder=True)
 
     def _parseFeatureDescriptor(self, proto):

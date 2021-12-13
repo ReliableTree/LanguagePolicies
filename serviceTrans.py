@@ -61,8 +61,8 @@ TRAIN_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDatase
 
 VAL_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/val_data_torch.txt'
 
-MODEL_PATH   = '/home/hendrik/fileTransfer/Data/Model/VmxGN3nlEKX/best_val/policy_translation_h'
-MODEL_SETUP  = '/home/hendrik/fileTransfer/Data/Model/VmxGN3nlEKX/best_val/model_setup.pkl'
+MODEL_PATH   = '/home/hendrik/fileTransfer/KOjq2zMjvYJ/best_val/policy_translation_h'
+MODEL_SETUP  = '/home/hendrik/fileTransfer/KOjq2zMjvYJ/best_val/model_setup.pkl'
 
 
 from torch.utils.data import DataLoader
@@ -244,13 +244,19 @@ class NetworkService():
                 generated, self.atn, phase = self.model(self.input_data, training=False, return_cfeature = False, model_params =self.model_setup)
             #print(f'time for one call: {time.perf_counter() - h}')
             #print(f'atn : {atn}')
-            self.trj_gen    = generated.mean(axis=0).cpu().numpy()
+            self.trj_gen    = generated.mean(axis=0)
+            self.trj_gen    = self.median_fiter(self.trj_gen, 3)
+            self.trj_gen = self.trj_gen.cpu().numpy() #350
             #print(f'trj_gen: {self.trj_gen.shape}')
 
-            self.phase_value     = phase.mean(axis=0).cpu().numpy()
+            self.phase_value     = phase.mean(axis=0).unsqueeze(1)
+            self.phase_value     = self.median_fiter(self.phase_value, 3)
+            self.phase_value     = self.phase_value.cpu().numpy()
+
+            
         #print(f'phase: {phase_value}')
-        res_trj = self.trj_gen[:min(249, len(self.history))]
-        phase_value = self.phase_value[min(249, len(self.history))]
+        res_trj = self.trj_gen[:min(349, len(self.history))]
+        phase_value = self.phase_value[min(349, len(self.history))]
         if (phase_value > 0.95):# and len(self.sfp_history) > 100:
             #print(f'phase value: {phase_value}')
             np.save("history", self.history)
@@ -270,6 +276,17 @@ class NetworkService():
         
         self.req_step += 1
         return (res_trj.flatten().tolist(), [0.], 0, [0.], float(phase_value)) 
+
+    
+    def median_fiter(self, inpt, median_size):
+        result = None
+        for i in range(inpt.size(0) - median_size + 1):
+            if result is None:
+                result = torch.median(inpt[i:i+median_size], dim = 0)[0].unsqueeze(0)
+            else:
+                result = torch.cat((result, torch.median(inpt[i:i+median_size], dim=0)[0].unsqueeze(0)), dim = 0)
+        return result     
+    
     
     def idToText(self, id):
         names = ["", "Yellow Small Round", "Red Small Round", "Green Small Round", "Blue Small Round", "Pink Small Round",

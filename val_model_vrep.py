@@ -35,7 +35,7 @@ USE_SHAPE_SIZE      = True
 # (manual mode will allow you to generate environments and type in your own commands)
 RUN_ON_TEST_DATA    = True
 # How many of the 100 test-data do you want to test?
-NUM_TESTED_DATA     = 12
+NUM_TESTED_DATA     = 100
 # Where to find the normailization?
 NORM_PATH           = "/home/hendrik/Documents/master_project/LokalData/GDrive/normalization_v2.pkl"
 # Where to find the VRep scene file. This has to be an absolute path. 
@@ -213,7 +213,7 @@ class Simulator(object):
         img_msg.step = len(img_msg.data) // img_msg.height
 
         return img_msg
-    
+
     def predictTrajectory(self, voice, state, cnt):
         norm         = np.take(self.normalization["values"], indices=[0,1,2,3,4,5,30], axis=1)
         image        = self._getCameraImage()
@@ -418,8 +418,8 @@ class Simulator(object):
             self.last_gripper = 0.0
             th = 1.0
          
-            
-            while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5) and cnt < 250:
+            print(f'voice: {data["voice"]}')
+            while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5):
                 state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
                 cnt += 1
                 tf_trajectory, phase = self.predictTrajectory(data["voice"], state, cnt)
@@ -490,8 +490,8 @@ class Simulator(object):
             th = 1.0
             
             #print(f'data: {data}')
-            print(f'target position: {self._getTargetPosition(data)}')
-
+            #print(f'target position: {self._getTargetPosition(data)}')
+            print(f'voice: {data["voice"]}')
             while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5)  and cnt < 300:
                 state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
                 cnt += 1
@@ -632,6 +632,7 @@ class Simulator(object):
             self._maybeDropBall(r_state)
 
             if phase >=0.92:
+            #if self.cnt >= 250 :
                 self.node.get_logger().info("Finished running trajectory with " + str(self.cnt) + " steps")
                 self._stopRobotMovement()
                 self.rm_voice = ""
