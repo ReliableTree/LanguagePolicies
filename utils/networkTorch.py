@@ -120,9 +120,11 @@ class NetworkTorch(nn.Module):
                     break
 
             if self.use_tboard:
-                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[50,1]))
-                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[50,1,1]))
-                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[50,1,1]))
+                do_dim = d_in[0].size(0)
+                self.model.eval()
+                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
+                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
+                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
                 d_in_graphs  = (in0, in1, in2)
                 out_model = self.model(d_in_graphs, training=True, model_params=model_params)
                 self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
@@ -133,9 +135,9 @@ class NetworkTorch(nn.Module):
                                 epoch=epoch,
                                 model_params=model_params)
                                 
-                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[50,1]))
-                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[50,1,1]))
-                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[50,1,1]))
+                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
+                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
+                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
                 d_in_graphs  = (in0, in1, in2)
                 model_params['contr_trans']['recursive'] = False
                 out_model = self.model(d_in_graphs, training=True, model_params=model_params)
@@ -146,6 +148,7 @@ class NetworkTorch(nn.Module):
                                 name_plot = str(step),
                                 epoch=epoch,
                                 model_params=model_params)
+                self.model.train()
 
 
             #self.model.eval()

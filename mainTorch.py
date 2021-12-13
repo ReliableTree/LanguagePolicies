@@ -127,9 +127,9 @@ if __name__ == '__main__':
                         'num_upconvs':5,
                         'stride':3,
                         'd_output':8,
-                        'nhead':16,
+                        'nhead':8,
                         'd_hid':80,
-                        'nlayers':2
+                        'nlayers':3
                     },
                 }
 
