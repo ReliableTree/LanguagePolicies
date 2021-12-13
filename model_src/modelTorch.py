@@ -193,7 +193,8 @@ class PolicyTranslationModelTorch(nn.Module):
                     nhead= self.model_setup['contr_trans']['plan_nn']['plan']['nhead']
                     d_hid= self.model_setup['contr_trans']['plan_nn']['plan']['d_hid']
                     nlayers= self.model_setup['contr_trans']['plan_nn']['plan']['nlayers']
-                    self.plan_nn = TransformerUpConv(num_upconvs=num_upconvs, stride=stride, ntoken=inpt_features.size(-1), d_output=d_output, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=350).to(robot.device)
+                    use_layernorm = self.model_setup['contr_trans']['plan_nn']['plan']['use_layernorm']
+                    self.plan_nn = TransformerUpConv(num_upconvs=num_upconvs, stride=stride, ntoken=inpt_features.size(-1), d_output=d_output, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=350, use_layernorm=use_layernorm).to(robot.device)
                 inpt_features = inpt_features.unsqueeze(0)      #1x16x53
                 generated_from_gt = self.plan_nn.forward(inpt_features)
                 generated_from_gt = generated_from_gt.transpose(0,1)

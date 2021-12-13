@@ -123,6 +123,7 @@ if __name__ == '__main__':
                 'plan_nn'       : {
                     'use_plan_nn'   : True,
                     'plan'     :{
+                        'use_layernorm':'True',
                         'plan_type' : 'upconv',
                         'num_upconvs':5,
                         'stride':3,
