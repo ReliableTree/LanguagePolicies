@@ -122,7 +122,15 @@ if __name__ == '__main__':
                 'count_emb_dim' : 20,
                 'plan_nn'       : {
                     'use_plan_nn'   : True,
-                    'plan_outpt_dim' :20
+                    'plan'     :{
+                        'plan_type' : 'upconv',
+                        'num_upconvs':5,
+                        'stride':3,
+                        'd_output':8,
+                        'nhead':16,
+                        'd_hid':80,
+                        'nlayers':2
+                    },
                 }
 
             },

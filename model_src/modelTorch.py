@@ -13,6 +13,7 @@ from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
 from model_src.controllerTransformer import ControllerTransformer
 from model_src.transformerAttention import TransformerAttention
 from model_src.planNetwork import Plan_NN
+from model_src.transformerUpConv import TransformerUpConv
 
 from utils.Transformer import TransformerModel
 from utils.Transformer import generate_square_subsequent_mask
@@ -181,58 +182,21 @@ class PolicyTranslationModelTorch(nn.Module):
         robot_first_state = torch.cat((robot_first_state, ce), dim=-1)
 
         # Add the language to the mix again. Possibly usefull to predict dt
-
         if self.model_setup['contr_trans']['use_contr_trans'] :
             cfeatures = torch.cat((self.cfeatures_max, self.language), axis=1)   #16x46
             if 'plan_nn' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['plan_nn']['use_plan_nn']:
                 inpt_features = torch.cat((cfeatures, robot[:,0]), dim=-1) #16x46+7 = 16x53
                 if self.plan_nn is None:
-                    self.plan_nn = Plan_NN(inpt_features.size(-1), self.model_setup['contr_trans']['plan_nn']['plan_outpt_dim'] * 350).to(robot.device)
-                inpt_seq = self.plan_nn.forward(inpt_features)
-                inpt_seq = inpt_seq.reshape(robot.size(0), 350, -1)
-
-            else:
-                cfeatures = cfeatures.unsqueeze(1).repeat(1,robot_first_state.size(1),1)         #16x350x46
-                inpt_seq = torch.cat((cfeatures, robot_first_state), dim = -1)          #16x350x53 + 20
-
-            if self.controller_transformer is None:
-                d_output = self.model_setup['contr_trans']['d_output'] #8
-                d_model = self.model_setup['contr_trans']['d_model'] #210
-                nhead   = self.model_setup['contr_trans']['nhead'] #6
-                nlayers = self.model_setup['contr_trans']['nlayers'] #4
-                self.controller_transformer = ControllerTransformer(ntoken=inpt_seq.size(-1), d_output=d_output, d_model=d_model, nhead=nhead, d_hid=d_model, nlayers=nlayers).to(inpt_seq.device)
-                self.trans_seq_len = max(inpt_seq.size(1), 350)
-
-            src_mask = generate_square_subsequent_mask(inpt_seq.size(1)).to(inpt_seq.device)
-
-            #result from gt:
-            if model_params['contr_trans']['recursive']:
-                generated_recursive = inpt_seq[:,:1].transpose(0,1) #1x16x53
-                for step in range(inpt_seq.size(1) - 1):
-                    if step < (inpt_seq.size(1) - 2):
-                        with torch.no_grad():
-                            res = self.controller_transformer(generated_recursive, src_mask = src_mask[:(step+1), :(step + 1)])[-1].unsqueeze(0) #1x16x8
-                    else:
-                        res = self.controller_transformer(generated_recursive, src_mask = src_mask[:(step+1), :(step + 1)])[-1].unsqueeze(0) #1x16x8
-                    n_state = torch.cat((cfeatures[:,:1].transpose(0,1), res[:,:,:7]), dim = -1)
-                    generated_recursive = torch.cat((generated_recursive, n_state), dim=0) 
-                generated_from_gt = generated_recursive.transpose(0,1)
-            else:
-                if model_params['contr_trans']['use_mask']:
-                    generated_from_gt = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask)  #350x16x8
-                else:
-                    generated_from_gt = self.controller_transformer(inpt_seq.transpose(0,1), src_mask=None)
-                generated_from_gt = generated_from_gt.transpose(0,1)                              #16x350x8
-
-            #result from generated:
-            if model_params['contr_trans']['use_gen2']:
-                with torch.no_grad():
-                    generated_for_generation = self.controller_transformer(inpt_seq.transpose(0,1), src_mask = src_mask).transpose(0,1)      #350x16x8
-                generated_trj_for_generation = generated_for_generation[:,:,:7]
-                inpt_seq_generated = torch.cat((cfeatures, generated_trj_for_generation), dim = -1)
-                generated_from_generated = self.controller_transformer(inpt_seq_generated.transpose(0,1), src_mask = src_mask).transpose(0,1) 
-                return generated_from_gt[:,:,:7], generated_from_generated[:,:,:7], self.atn, generated_from_generated[:,:,7]
-            else:
+                    num_upconvs = self.model_setup['contr_trans']['plan_nn']['plan']['num_upconvs']
+                    stride= self.model_setup['contr_trans']['plan_nn']['plan']['stride']
+                    d_output= self.model_setup['contr_trans']['plan_nn']['plan']['d_output']
+                    nhead= self.model_setup['contr_trans']['plan_nn']['plan']['nhead']
+                    d_hid= self.model_setup['contr_trans']['plan_nn']['plan']['d_hid']
+                    nlayers= self.model_setup['contr_trans']['plan_nn']['plan']['nlayers']
+                    self.plan_nn = TransformerUpConv(num_upconvs=num_upconvs, stride=stride, ntoken=inpt_features.size(-1), d_output=d_output, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=350).to(robot.device)
+                inpt_features = inpt_features.unsqueeze(0)      #1x16x53
+                generated_from_gt = self.plan_nn.forward(inpt_features)
+                generated_from_gt = generated_from_gt.transpose(0,1)
                 return generated_from_gt[:,:,:7], self.atn, generated_from_gt[:,:,7]
 
     
