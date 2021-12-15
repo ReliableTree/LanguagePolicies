@@ -61,8 +61,9 @@ TRAIN_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDatase
 
 VAL_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/val_data_torch.txt'
 
-MODEL_PATH   = '/home/hendrik/fileTransfer/KOjq2zMjvYJ/best_val/policy_translation_h'
-MODEL_SETUP  = '/home/hendrik/fileTransfer/KOjq2zMjvYJ/best_val/model_setup.pkl'
+MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/98wZRXMg8LY/best_val/policy_translation_h'
+MODEL_SETUP  = '/home/hendrik/Documents/master_project/LokalData/Data/Model/98wZRXMg8LY/best_val/model_setup.pkl'
+
 
 
 from torch.utils.data import DataLoader
@@ -79,6 +80,7 @@ else:
 def setup_model(device = 'cpu', batch_size = 2):
     with open(MODEL_SETUP, 'rb') as f:
         model_setup = pickle.load(f)
+        print(model_setup)
     model   = PolicyTranslationModelTorch(od_path=FRCNN_PATH, glove_path=GLOVE_PATH, model_setup=model_setup).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)

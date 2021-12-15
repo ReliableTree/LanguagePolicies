@@ -123,7 +123,7 @@ if __name__ == '__main__':
                 'plan_nn'       : {
                     'use_plan_nn'   : True,
                     'plan'     :{
-                        'use_layernorm':'True',
+                        'use_layernorm':False,
                         'plan_type' : 'upconv',
                         'num_upconvs':5,
                         'stride':3,
@@ -170,19 +170,3 @@ if __name__ == '__main__':
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 
-
-#model_setup: {obj_embedding:{use_obj_embedding, EIS, EOS} , attn_trans{use_attn_trans, }, lang_trans"{use_lang_transformer,  }, contr_trans:{use_contr_trans, }, LSTM:{use_LSTM} }
-
-'''lang_trans:                    d_output = self.model_setup['lang_trans']['d_output'] #32
-                                d_model = self.model_setup['lang_trans']['d_model']   #42
-                                nhead = self.model_setup['lang_trans']['nhead']   #2
-                                nlayers = self.model_setup['lang_trans']['nlayers']   #2'''
-
-'''obj_embedding : EIS:30
-                EOS:10'''
-
-'''
-contr_trans:                 d_output = self.model_setup['contr_trans']['d_output'] #8
-                            d_model = self.model_setup['contr_trans']['d_model'] #210
-                            nhead   = self.model_setup['contr_trans']['nhead'] #6
-                            nlayers = self.model_setup['contr_trans']['nlayers'] #4'''

@@ -19,6 +19,7 @@ class TransformerUpConv(nn.Module):
         super().__init__()
         self.seq_len = seq_len
         module_list = nn.ModuleList()
+        print(f'use layernoem: {use_layernorm}')
         for i in range(num_upconvs):
             if i == 0:
                 module_list += [
