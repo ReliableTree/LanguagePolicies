@@ -130,7 +130,7 @@ if __name__ == '__main__':
                         'stride':3,
                         'd_output':8,
                         'nhead':4,
-                        'd_hid':160,
+                        'd_hid':80,
                         'nlayers':3
                     },
                 }
