@@ -94,6 +94,7 @@ class PolicyTranslationModelTorch(nn.Module):
 
         if 'plan_nn' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['plan_nn']['use_plan_nn']:
             self.plan_nn = None
+            self.prediction_nn = None
 
 
 
@@ -101,7 +102,7 @@ class PolicyTranslationModelTorch(nn.Module):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
 
 
-    def forward(self, inputs, training=False, return_cfeature = False, gt_attention = None, model_params = None):
+    def forward(self, inputs, training=False, return_cfeature = False, gt_attention = None, model_params = None, gt_tjkt=None):
         if training:
             gt_attention = None
 
@@ -196,9 +197,26 @@ class PolicyTranslationModelTorch(nn.Module):
                     use_layernorm = self.model_setup['contr_trans']['plan_nn']['plan']['use_layernorm']
                     self.plan_nn = TransformerUpConv(num_upconvs=num_upconvs, stride=stride, ntoken=inpt_features.size(-1), d_output=d_output, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=350, use_layernorm=use_layernorm).to(robot.device)
                 inpt_features = inpt_features.unsqueeze(0)      #1x16x53
-                generated_from_gt = self.plan_nn.forward(inpt_features)
-                generated_from_gt = generated_from_gt.transpose(0,1)
-                return generated_from_gt[:,:,:7], self.atn, generated_from_gt[:,:,7]
+                generated_from_gt = self.plan_nn.forward(inpt_features) #350x16x8
+                if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
+                    pred_features = inpt_features.repeat([generated_from_gt.size(0), 1, 1]) #350 x 16 x 53
+                    pred_features_p = torch.cat((pred_features, generated_from_gt[:,:,:7]), dim = -1) #350x16x60
+                    if self.prediction_nn is None:
+                        self.prediction_nn = TransformerUpConv(num_upconvs=num_upconvs, stride=stride, ntoken=pred_features_p.size(-1), d_output=1, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=350, use_layernorm=use_layernorm, upconv=False).to(robot.device)
+                    loss_prediction = self.prediction_nn(pred_features_p).squeeze() #1x16x1
+                    if gt_tjkt is not None:
+                        #print(f'pred_features: {pred_features.shape}')
+                        #print(f'gt_tjkt: {gt_tjkt.shape}')
+                        pred_features_gt = torch.cat((pred_features, gt_tjkt.transpose(0,1)), dim=-1) #350x16x60
+                        loss_gt = self.prediction_nn(pred_features_gt).squeeze()
+                generated_from_gt = generated_from_gt.transpose(0,1) #16x350x8
+                if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
+                    if gt_tjkt is not None:
+                        return generated_from_gt[:,:,:7], self.atn, generated_from_gt[:,:,7], loss_prediction, loss_gt
+                    else:
+                        return generated_from_gt[:,:,:7], self.atn, generated_from_gt[:,:,7], loss_prediction
+                else:
+                    return generated_from_gt[:,:,:7], self.atn, generated_from_gt[:,:,7]
 
     
     def getVariables(self, step=None):

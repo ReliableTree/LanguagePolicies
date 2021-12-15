@@ -8,6 +8,7 @@ import sys
 import numpy as np
 from torch._C import dtype
 from torch.serialization import save
+import model_src
 from utils.graphsTorch import TBoardGraphsTorch
 import tensorflow as tf
 
@@ -75,7 +76,7 @@ class NetworkTorch(nn.Module):
             model_params['obj_embedding']['train_embedding']  = rel_epoch < 0.3
             print(f'train embedding: {model_params["obj_embedding"]["train_embedding"]}')
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                if (step+1) % 400 == 0:
+                if (step+1) % 100 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)                    
                 train_loss.append(self.step(d_in, d_out, train=True, model_params=model_params))
                 
@@ -171,7 +172,10 @@ class NetworkTorch(nn.Module):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
         if not train:
             self.model.eval()
-        result = self.model(d_in, training=train, gt_attention = attention, model_params=model_params)
+        if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
+            result = self.model(d_in, training=train, gt_attention = attention, model_params=model_params, gt_tjkt=generated)
+        else:
+            result = self.model(d_in, training=train, gt_attention = attention, model_params=model_params)
         if not train:
             self.model.train()
         
@@ -243,6 +247,8 @@ class NetworkTorch(nn.Module):
         if self.use_transformer:
             if model_params['contr_trans']['use_gen2']:
                 gen_trj, gen_gen_trj, atn, phs                          = result
+            elif 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
+                gen_trj, atn, phs, loss_prediction, loss_gt = result
             else:
                 gen_trj, atn, phs                          = result
 
@@ -267,8 +273,10 @@ class NetworkTorch(nn.Module):
         phs_loss = ((phase-phs.squeeze())**2).mean()
         #trj_loss = ((generated- gen_trj)**2).mean()
         #trj_loss = trj_loss.mean()
-        trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim)
-        #trj_loss = (trj_loss * loss_atn).mean()
+        trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim).mean(-1) #16?
+        if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
+            llp = ((trj_loss - loss_prediction)**2).mean()
+            llg = ((0-loss_gt)**2).mean()
         trj_loss = (trj_loss).mean()
 
         if model_params['contr_trans']['use_gen2']:
@@ -290,9 +298,13 @@ class NetworkTorch(nn.Module):
             if model_params['contr_trans']['use_gen2']:
                 loss += trj_gen_loss * self.lw_gen_trj
                 debug_dict['trj_gen_loss':trj_gen_loss]
-                return (loss, debug_dict)
-            else:
-                return (loss, debug_dict)
+            if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
+                loss += llp * self.lw_trj
+                loss += llg * self.lw_trj
+                debug_dict['predicted_trajectory_loss']=llp
+                debug_dict['gt_trajectory_loss']=llg
+            return (loss, debug_dict)
+
         else:
             debug_dict = {
                 'atn_loss':atn_loss,
@@ -329,6 +341,8 @@ class NetworkTorch(nn.Module):
         else:
             if model_params['contr_trans']['use_gen2']:
                 gen_trj, gen_gen_trj, atn, phase = result
+            elif 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
+                gen_trj, atn, phase, loss_prediction = result
             else:
                 gen_trj, atn, phase = result
             dmp_dt = None

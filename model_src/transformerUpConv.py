@@ -15,16 +15,24 @@ class TorchTranspose(nn.Module):
         
 class TransformerUpConv(nn.Module):
     def __init__(self, num_upconvs, stride, ntoken: int, d_output: int, d_model: int, nhead: int, d_hid: int,
-                 nlayers: int, dilation = 2, dropout: float = 0.5, seq_len = 350, use_layernorm=True) -> None:
+                 nlayers: int, dilation = 2, dropout: float = 0.5, seq_len = 350, use_layernorm=True, upconv = True) -> None:
         super().__init__()
         self.seq_len = seq_len
         module_list = nn.ModuleList()
-        print(f'use layernoem: {use_layernorm}')
         for i in range(num_upconvs):
             if i == 0:
                 module_list += [
-                    TorchTranspose([(0,1), (1,2)]),
-                    nn.ConvTranspose1d(in_channels=ntoken, out_channels=ntoken, kernel_size=stride, stride=stride, dilation=dilation),
+                    TorchTranspose([(0,1), (1,2)])
+                ]
+                if upconv:
+                    module_list += [
+                    nn.ConvTranspose1d(in_channels=ntoken, out_channels=ntoken, kernel_size=stride, stride=stride, dilation=dilation)
+                    ]
+                else:
+                    module_list += [
+                        nn.Conv1d(in_channels=ntoken, out_channels=ntoken, kernel_size=stride, stride=stride)
+                    ]
+                module_list += [
                     TorchTranspose([(0,1), (0,2)]),
                     TransformerModel(ntoken=ntoken, d_output=d_model, d_model=d_model, nhead=nhead, d_hid=d_hid, nlayers=nlayers),
                 ]
@@ -33,16 +41,36 @@ class TransformerUpConv(nn.Module):
             elif i == num_upconvs-1:
                 module_list += [
                     TorchTranspose([(0,1), (1,2)]),
-                    nn.ConvTranspose1d(in_channels=d_model, out_channels=d_model, kernel_size=stride, stride=stride),
+                ]
+
+                if upconv:
+                    module_list += [
+                        nn.ConvTranspose1d(in_channels=d_model, out_channels=d_model, kernel_size=stride, stride=stride)
+                    ]
+                else:
+                    module_list += [
+                        nn.Conv1d(in_channels=d_model, out_channels=d_model, kernel_size=stride, stride=stride)
+                    ]
+                module_list += [
                     TorchTranspose([(0,1), (0,2)]),
                     TransformerModel(ntoken=d_model, d_output=d_output, d_model=d_model, nhead=nhead, d_hid=d_hid, nlayers=nlayers)
-                    ] 
+                ]
                 if use_layernorm:
                     module_list += [nn.LazyBatchNorm1d()]
             else:
                 module_list += [
                     TorchTranspose([(0,1), (1,2)]),
-                    nn.ConvTranspose1d(in_channels=d_model, out_channels=d_model, kernel_size=stride, stride=stride),
+                ]
+
+                if upconv:
+                    module_list += [
+                        nn.ConvTranspose1d(in_channels=d_model, out_channels=d_model, kernel_size=stride, stride=stride)
+                    ]
+                else:
+                    module_list += [
+                        nn.Conv1d(in_channels=d_model, out_channels=d_model, kernel_size=stride, stride=stride)
+                    ]
+                module_list += [
                     TorchTranspose([(0,1), (0,2)]),
                     TransformerModel(ntoken=d_model, d_output=d_model, d_model=d_model, nhead=nhead, d_hid=d_hid, nlayers=nlayers)  
                 ]
