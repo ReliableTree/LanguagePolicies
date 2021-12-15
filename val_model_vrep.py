@@ -440,6 +440,7 @@ class Simulator(object):
                 successfull += 1
             val_data[data["name"]] = eval_data
             self.write_success_in_cfeature_dict(promt = str(data["voice"]), success = eval_data["success"])
+            print(f'successful: {successfull}, all:{fid}')
             #dict_of_features = load_obj('dict_of_features')
             # dict_of_features = {'prompt' : [{feature1 : data, ...}, {feature1 : data, ..}], ...} #for every promt, the resulting features are saved in a dict. The dicts are saved in a list where the last element is the last run
             #dict_of_prompt = dict_of_features[str(data["voice"])][-1] 
@@ -516,6 +517,7 @@ class Simulator(object):
                 eval_data["success"] = False
             val_data[data["name"]] = eval_data
             self.write_success_in_cfeature_dict(promt = str(data["voice"]), success = eval_data["success"])
+            print(f'successful: {successfull}, all:{fid}')
         return successfull, val_data
 
     def evalDirect(self, runs):

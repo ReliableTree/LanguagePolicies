@@ -77,7 +77,7 @@ else:
     limitGPUMemory()
 
 # should not use network.savedict.....
-def setup_model(device = 'cpu', batch_size = 2):
+def setup_model(device = 'cpu', batch_size = 32):
     with open(MODEL_SETUP, 'rb') as f:
         model_setup = pickle.load(f)
         print(model_setup)
@@ -231,7 +231,7 @@ class NetworkService():
 
         robot           = np.asarray(self.history, dtype=np.float32)
         #robot           = np.asarray([list(req.robot)], dtype=np.float32)
-        do_dim = 200
+        do_dim = 32
         self.input_data = (
             torch.tensor(np.tile([self.language],[do_dim, 1]), dtype=torch.int64, device=self.device), 
             torch.tensor(np.tile([self.features],[do_dim, 1, 1]), dtype=torch.float32, device=self.device),
