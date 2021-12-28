@@ -14,7 +14,7 @@ import time
 class PolicyTranslationModel(tf.keras.Model):
     def __init__(self, od_path, glove_path, special=None):
         super(PolicyTranslationModel, self).__init__(name="policy_translation")
-        self.units               = 200
+        self.units               = 32
         self.output_dims         = 7
         self.basis_functions     = 11
 

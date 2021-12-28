@@ -56,8 +56,8 @@ model((
     np.ones((bs, 6, 5), dtype=np.float32),
     np.ones((bs, 500, 7), dtype=np.float32)
 ))
-model.load_weights(MODEL_PATH)
 model.summary()
+model.load_weights(MODEL_PATH)
 
 class NetworkService():
     def __init__(self):

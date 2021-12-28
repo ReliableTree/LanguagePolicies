@@ -23,7 +23,10 @@ JupyterTryOut/
 ros2/build
 ros2/install
 ros2/log
+ros2/src
 
 gen_trajectory.npy
 history.npy
 trajectories.npy
+val_result.json
+val_result.json
