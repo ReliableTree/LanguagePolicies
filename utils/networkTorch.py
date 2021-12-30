@@ -59,7 +59,7 @@ class NetworkTorch(nn.Module):
     def setup_model(self, model_params):
         with torch.no_grad():
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                result = self.model(inputs=d_in, training=True, model_params=model_params)
+                result = self.model(inputs=d_in)
                 break
 
     def setDatasets(self, train_loader, val_loader):
@@ -127,7 +127,7 @@ class NetworkTorch(nn.Module):
                 in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
                 in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
                 d_in_graphs  = (in0, in1, in2)
-                out_model = self.model(d_in_graphs, training=True, model_params=model_params)
+                out_model = self.model(d_in_graphs)
                 self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
                                 (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
                                 out_model,
@@ -141,7 +141,7 @@ class NetworkTorch(nn.Module):
                 in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
                 d_in_graphs  = (in0, in1, in2)
                 model_params['contr_trans']['recursive'] = False
-                out_model = self.model(d_in_graphs, training=True, model_params=model_params)
+                out_model = self.model(d_in_graphs)
                 self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
                                 (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
                                 out_model,
@@ -173,9 +173,9 @@ class NetworkTorch(nn.Module):
         if not train:
             self.model.eval()
         if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-            result = self.model(d_in, training=train, gt_attention = attention, model_params=model_params, gt_tjkt=generated)
+            result = self.model(d_in, gt_attention = attention, gt_tjkt=generated)
         else:
-            result = self.model(d_in, training=train, gt_attention = attention, model_params=model_params)
+            result = self.model(d_in, gt_attention = attention)
         if not train:
             self.model.train()
         

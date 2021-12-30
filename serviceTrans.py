@@ -55,14 +55,14 @@ WEIGHT_DT       = 14.0
 # Weight for the phase prediction loss
 WEIGHT_PHS      = 1.0
 # Number of epochs to train
-TRAIN_EPOCHS    = 100
+TRAIN_EPOCHS    = 1
 
 TRAIN_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/train_data_torch.txt'
 
 VAL_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/val_data_torch.txt'
 
-MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Data/Model/98wZRXMg8LY/best_val/policy_translation_h'
-MODEL_SETUP  = '/home/hendrik/Documents/master_project/LokalData/Data/Model/98wZRXMg8LY/best_val/model_setup.pkl'
+MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Model/NxmJWy8Egzz/best_val/policy_translation_h'
+MODEL_SETUP  = '/home/hendrik/Documents/master_project/LokalData/Model/NxmJWy8Egzz/best_val/model_setup.pkl'
 
 
 
@@ -243,7 +243,10 @@ class NetworkService():
         if self.trj_gen is None:
             with torch.no_grad():
                 self.model.train()
-                generated, self.atn, phase = self.model(self.input_data, training=False, return_cfeature = False, model_params =self.model_setup)
+                if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
+                    generated, self.atn, phase, pred_loss = self.model(self.input_data)
+                else:
+                    generated, self.atn, phase = self.model(self.input_data)
             #print(f'time for one call: {time.perf_counter() - h}')
             #print(f'atn : {atn}')
             self.trj_gen    = generated.mean(axis=0)
@@ -255,11 +258,13 @@ class NetworkService():
             self.phase_value     = self.median_fiter(self.phase_value, 3)
             self.phase_value     = self.phase_value.cpu().numpy()
 
+            self.pred_loss = pred_loss
+
             
         #print(f'phase: {phase_value}')
         res_trj = self.trj_gen[:min(349, len(self.history))]
         phase_value = self.phase_value[min(349, len(self.history))]
-        if (phase_value > 0.95):# and len(self.sfp_history) > 100:
+        '''if (phase_value > 0.95):# and len(self.sfp_history) > 100:
             #print(f'phase value: {phase_value}')
             np.save("history", self.history)
 
@@ -272,12 +277,12 @@ class NetworkService():
                 'attn' : self.atn.cpu().numpy(),
                 'features' : self.features
             }
-            save_dict_of_features(dict_of_features, str(req.language))
+            save_dict_of_features(dict_of_features, str(req.language))'''
 
             #save_cfeature(cfeatures[0].numpy(), str(req.language))
         
         self.req_step += 1
-        return (res_trj.flatten().tolist(), [0.], 0, [0.], float(phase_value)) 
+        return (res_trj.flatten().tolist(), [float(self.pred_loss.detach().mean())], 0, [0.], float(phase_value)) 
 
     
     def median_fiter(self, inpt, median_size):

@@ -1,5 +1,6 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
+import re
 import matplotlib
 matplotlib.use("TkAgg")
 import rclpy
@@ -42,6 +43,8 @@ NORM_PATH           = "/home/hendrik/Documents/master_project/LokalData/GDrive/n
 VREP_SCENE          = "/home/hendrik/Documents/master_project/LokalData/GDrive/NeurIPS2020.ttt"
 #VREP_SCENE          = os.getcwd() + "/" + VREP_SCENE
 PLOTS_PATH          = '/home/hendrik/Documents/master_project/LokalData/vrep_eval_plots/'
+
+MODEL_ID            = 'NxmJWy8Egzz'
 
 class Simulator(object):
     def __init__(self, args=None):
@@ -214,7 +217,7 @@ class Simulator(object):
 
         return img_msg
 
-    def predictTrajectory(self, voice, state, cnt):
+    def predictTrajectory(self, voice, state, cnt, predict_loss = False):
         norm         = np.take(self.normalization["values"], indices=[0,1,2,3,4,5,30], axis=1)
         image        = self._getCameraImage()
 
@@ -239,7 +242,11 @@ class Simulator(object):
         trajectory = np.asarray(result.trajectory).reshape(-1, 7)
         trajectory = self.restoreValues(trajectory, norm[0,:], norm[1,:])
         phase      = float(result.phase)
-        return trajectory, phase
+        if predict_loss:
+            pred_loss = float(torch.tensor(result.confidence[0]).mean())
+            return trajectory, phase, pred_loss
+        else:
+            return trajectory, phase
     
     def normalize(self, value, v_min, v_max):
         if type(value) == list:
@@ -394,58 +401,60 @@ class Simulator(object):
     def valPhase1(self, files, feedback=True):
         successfull = 0
         val_data    = {}
-        nn_trajectory  = []
-        ro_trajectory  = []
         for fid, fn in enumerate(files):
-            torch.cuda.empty_cache()
-            print("Phase 1 Run {}/{}".format(fid, len(files)))
-            eval_data = {}
-            with open(fn + "1.json", "r") as fh:
-                data = json.load(fh)            
+            if fid in [101]:
+                nn_trajectory  = []
+                ro_trajectory  = []
+                torch.cuda.empty_cache()
+                print("Phase 1 Run {}/{}".format(fid, len(files)))
+                eval_data = {}
+                with open(fn + "1.json", "r") as fh:
+                    data = json.load(fh)            
 
-            gt_trajectory = np.asarray(data["trajectory"])
-            self._resetEnvironment()
-            self._createEnvironment(data["ints"], data["floats"])
-            self._setRobotInitial(gt_trajectory[0,:])
-            self.pyrep.step()
-
-            eval_data["language"] = self._getLanguateInformation(data["voice"], 1)
-            eval_data["trajectory"] = {"gt": [], "state": []}
-            eval_data["trajectory"]["gt"] = gt_trajectory.tolist()
-
-            cnt   = 0
-            phase = 0.0
-            self.last_gripper = 0.0
-            th = 1.0
-         
-            print(f'voice: {data["voice"]}')
-            while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5):
-                state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
-                cnt += 1
-                tf_trajectory, phase = self.predictTrajectory(data["voice"], state, cnt)
-                r_state    = tf_trajectory[-1,:]
-                eval_data["trajectory"]["state"].append(r_state.tolist())
-                nn_trajectory.append(r_state)
-                ro_trajectory.append(self._getRobotState())
-                self.last_gripper = r_state[6]
-                self._setJointVelocityFromTarget(r_state)
+                gt_trajectory = np.asarray(data["trajectory"])
+                self._resetEnvironment()
+                self._createEnvironment(data["ints"], data["floats"])
+                self._setRobotInitial(gt_trajectory[0,:])
                 self.pyrep.step()
-                if r_state[6] > 0.5 and "locations" not in eval_data.keys():
-                    eval_data["locations"] = self._getTargetPosition(data)
-                    print(f'closest: {self._getTargetPosition(data)}')
 
-            eval_data["success"] = False
-            if self._graspedObject():
-                eval_data["success"] = True
-                successfull += 1
-            val_data[data["name"]] = eval_data
-            self.write_success_in_cfeature_dict(promt = str(data["voice"]), success = eval_data["success"])
-            print(f'successful: {successfull}, all:{fid}')
-            #dict_of_features = load_obj('dict_of_features')
-            # dict_of_features = {'prompt' : [{feature1 : data, ...}, {feature1 : data, ..}], ...} #for every promt, the resulting features are saved in a dict. The dicts are saved in a list where the last element is the last run
-            #dict_of_prompt = dict_of_features[str(data["voice"])][-1] 
-            #dict_of_prompt['success'] = eval_data["success"]
-            #save_dict_of_features(dict_of_features, override=True)
+                eval_data["language"] = self._getLanguateInformation(data["voice"], 1)
+                eval_data["trajectory"] = {"gt": [], "state": []}
+                eval_data["trajectory"]["gt"] = gt_trajectory.tolist()
+
+                cnt   = 0
+                phase = 0.0
+                self.last_gripper = 0.0
+                th = 1.0
+            
+                print(f'voice: {data["voice"]}')
+                while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5):
+                    state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
+                    cnt += 1
+                    tf_trajectory, phase, pred_loss = self.predictTrajectory(data["voice"], state, cnt, predict_loss=True)
+                    r_state    = tf_trajectory[-1,:]
+                    eval_data["trajectory"]["state"].append(r_state.tolist())
+                    nn_trajectory.append(r_state.tolist())
+                    ro_trajectory.append(self._getRobotState())
+                    self.last_gripper = r_state[6]
+                    self._setJointVelocityFromTarget(r_state)
+                    self.pyrep.step()
+                    if r_state[6] > 0.5 and "locations" not in eval_data.keys():
+                        eval_data["locations"] = self._getTargetPosition(data)
+                        print(f'closest: {self._getTargetPosition(data)}')
+                eval_data["success"] = False
+                if self._graspedObject():
+                    eval_data["success"] = True
+                    successfull += 1
+                eval_data['pred_loss'] = pred_loss
+                val_data[data["name"]] = eval_data
+                self.write_success_in_cfeature_dict(promt = str(data["voice"]), success = eval_data["success"])
+                print(f'successful: {successfull}, all:{fid}')
+
+                #dict_of_features = load_obj('dict_of_features')
+                # dict_of_features = {'prompt' : [{feature1 : data, ...}, {feature1 : data, ..}], ...} #for every promt, the resulting features are saved in a dict. The dicts are saved in a list where the last element is the last run
+                #dict_of_prompt = dict_of_features[str(data["voice"])][-1] 
+                #dict_of_prompt['success'] = eval_data["success"]
+                #save_dict_of_features(dict_of_features, override=True)
         return successfull, val_data
 
     def write_success_in_cfeature_dict(self, promt, success):
@@ -461,63 +470,65 @@ class Simulator(object):
         successfull         = 0
         val_data            = {}
         for fid, fn in enumerate(files):
-            print("Phase 2 Run {}/{}".format(fid, len(files)))
-            eval_data = {}
-            fpath     = fn + "2.json"
-            filename  = os.path.basename(fpath)
-            with open(fpath, "r") as fh:
-                data = json.load(fh)
-            gt_trajectory = np.asarray(data["trajectory"])
-            
-            if USE_SHAPE_SIZE and filename in self.shape_size_replacement.keys():
-                data["voice"] = self.shape_size_replacement[filename]
+            if fid in [42]:
+                print("Phase 2 Run {}/{}".format(fid, len(files)))
+                eval_data = {}
+                fpath     = fn + "2.json"
+                filename  = os.path.basename(fpath)
+                with open(fpath, "r") as fh:
+                    data = json.load(fh)
+                gt_trajectory = np.asarray(data["trajectory"])
+                
+                if USE_SHAPE_SIZE and filename in self.shape_size_replacement.keys():
+                    data["voice"] = self.shape_size_replacement[filename]
 
-            self._resetEnvironment()
-            self._createEnvironment(data["ints"], data["floats"])
-            self._setRobotInitial(gt_trajectory[0,:])
-            self.pyrep.step()
-            self._graspClosestContainer()
-            self.pyrep.step()
-
-            self.last_gripper  = 1.0
-            self.last_rotation = 0.0
-
-            eval_data["language"] = self._getLanguateInformation(data["voice"], 2)
-            eval_data["trajectory"] = {"gt": [], "state": []}
-            eval_data["trajectory"]["gt"] = gt_trajectory.tolist()
-
-            cnt   = 0
-            phase = 0.0
-            th = 1.0
-            
-            #print(f'data: {data}')
-            #print(f'target position: {self._getTargetPosition(data)}')
-            print(f'voice: {data["voice"]}')
-            while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5)  and cnt < 300:
-                state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
-                cnt += 1
-                tf_trajectory, phase = self.predictTrajectory(data["voice"], self._getRobotState(), cnt)
-                r_state              = tf_trajectory[-1,:]
-                eval_data["trajectory"]["state"].append(r_state.tolist())
-                r_state[6]           = r_state[6]
-                self._setJointVelocityFromTarget(r_state)
-                self.last_gripper = r_state[6]
-                dropped = self._maybeDropBall(r_state)
-                if dropped == 1 and "locations" not in eval_data.keys():
-                    eval_data["locations"] = self._getTargetPosition(data)
+                self._resetEnvironment()
+                self._createEnvironment(data["ints"], data["floats"])
+                self._setRobotInitial(gt_trajectory[0,:])
+                self.pyrep.step()
+                self._graspClosestContainer()
                 self.pyrep.step()
 
-            presult                 = self._evalPouring()
-            eval_percentage         = np.sum(presult) / float(len(presult))
-            eval_data["ball_array"] = presult
-            if eval_percentage > 0.5:
-                successfull += 1
-                eval_data["success"] = True
-            else:
-                eval_data["success"] = False
-            val_data[data["name"]] = eval_data
-            self.write_success_in_cfeature_dict(promt = str(data["voice"]), success = eval_data["success"])
-            print(f'successful: {successfull}, all:{fid}')
+                self.last_gripper  = 1.0
+                self.last_rotation = 0.0
+
+                eval_data["language"] = self._getLanguateInformation(data["voice"], 2)
+                eval_data["trajectory"] = {"gt": [], "state": []}
+                eval_data["trajectory"]["gt"] = gt_trajectory.tolist()
+
+                cnt   = 0
+                phase = 0.0
+                th = 1.0
+                
+                #print(f'data: {data}')
+                #print(f'target position: {self._getTargetPosition(data)}')
+                print(f'voice: {data["voice"]}')
+                while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5)  and cnt < 300:
+                    state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
+                    cnt += 1
+                    tf_trajectory, phase, pred_loss = self.predictTrajectory(data["voice"], self._getRobotState(), cnt, predict_loss=True)
+                    r_state              = tf_trajectory[-1,:]
+                    eval_data["trajectory"]["state"].append(r_state.tolist())
+                    r_state[6]           = r_state[6]
+                    self._setJointVelocityFromTarget(r_state)
+                    self.last_gripper = r_state[6]
+                    dropped = self._maybeDropBall(r_state)
+                    if dropped == 1 and "locations" not in eval_data.keys():
+                        eval_data["locations"] = self._getTargetPosition(data)
+                    self.pyrep.step()
+
+                presult                 = self._evalPouring()
+                eval_percentage         = np.sum(presult) / float(len(presult))
+                eval_data["ball_array"] = presult
+                if eval_percentage > 0.5:
+                    successfull += 1
+                    eval_data["success"] = True
+                else:
+                    eval_data["success"] = False
+                eval_data['pred_loss'] = pred_loss
+                val_data[data["name"]] = eval_data
+                self.write_success_in_cfeature_dict(promt = str(data["voice"]), success = eval_data["success"])
+                print(f'successful: {successfull}, all:{fid}')
         return successfull, val_data
 
     def evalDirect(self, runs):
@@ -534,11 +545,25 @@ class Simulator(object):
         data["phase_1"]     = e_data
         TBGT = TBoardGraphsTorch()
         for run, (name, run_data) in enumerate(data["phase_1"].items()):
-            TBGT.plotDMPTrajectory(y_true=torch.tensor(run_data['trajectory']['gt']), y_pred=torch.tensor(run_data['trajectory']['state']), save=True, name_plot = name + '_phase1_' + str(run), path=PLOTS_PATH)
+            y_true=torch.tensor(run_data['trajectory']['gt']) 
+            y_pred=torch.tensor(run_data['trajectory']['state'])
+            TBGT.plotDMPTrajectory(y_true=y_true, y_pred=y_pred, save=True, name_plot = str(run), path=PLOTS_PATH+MODEL_ID+'/phase1/')
+            comp_len = min(y_true.size(0), y_pred.size(0))
+            pred_loss = run_data['pred_loss']
+            act_loss = ((y_true[:comp_len] - y_pred[:comp_len])**2).sum()
+            print(f'phase 1 run {run} pred loss: {pred_loss}, act_loss: {act_loss}')
+
+
         s_p2, e_data        = self.valPhase2(files)
         data["phase_2"]     = e_data
         for run, (name, run_data) in enumerate(data["phase_2"].items()):
-            TBGT.plotDMPTrajectory(y_true=torch.tensor(run_data['trajectory']['gt']), y_pred=torch.tensor(run_data['trajectory']['state']), save=True, name_plot = name  + '_phase2_'+ str(run), path=PLOTS_PATH)
+            y_true=torch.tensor(run_data['trajectory']['gt']) 
+            y_pred=torch.tensor(run_data['trajectory']['state'])
+            TBGT.plotDMPTrajectory(y_true=y_true, y_pred=y_pred, save=True, name_plot = str(run), path=PLOTS_PATH+MODEL_ID+'/phase2/')
+            comp_len = min(y_true.size(0), y_pred.size(0))
+            pred_loss = run_data['pred_loss']
+            act_loss = ((y_true[:comp_len] - y_pred[:comp_len])**2).sum()
+            print(f'phase 2 run {run} pred loss: {pred_loss}, act_loss: {act_loss}')
 
         self.node.get_logger().info("Testing Picking: {}/{} ({:.1f}%)".format(s_p1,  runs, 100.0 * float(s_p1)/float(runs)))
         self.node.get_logger().info("Testing Pouring: {}/{} ({:.1f}%)".format(s_p2,  runs, 100.0 * float(s_p2)/float(runs)))
@@ -552,8 +577,9 @@ class Simulator(object):
                 c_p2  += 1
 
         #self.node.get_logger().info("Whole Task: {}/{} ({:.1f}%)".format(c_p2,  len(names), 100.0 * float(c_p2)  / float(len(names))))
-
-        with open("val_result.json", "w") as fh:
+        if not os.path.exists(PLOTS_PATH+MODEL_ID):
+            os.makedirs(PLOTS_PATH+MODEL_ID)
+        with open(PLOTS_PATH+MODEL_ID+'/results.json', "w") as fh:
             json.dump(data, fh)
     
     def _generateEnvironment(self):

@@ -24,7 +24,6 @@ import json
 import pickle
 import copy
 
-
 # Force TensorFlow to use the CPU
 FORCE_CPU    = True
 # Use dropout at run-time for stochastif-forward passes
