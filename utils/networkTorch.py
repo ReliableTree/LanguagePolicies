@@ -291,6 +291,7 @@ class NetworkTorch(nn.Module):
         trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim).mean(-1) #16?
         if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
             llp = ((trj_loss - loss_prediction)**2).mean()
+
             llg = ((0-loss_gt)**2).mean()
         trj_loss = (trj_loss).mean()
 
