@@ -208,7 +208,6 @@ class PolicyTranslationModelTorch(nn.Module):
                     self.mem = torch.cat((self.mem, language))
             else:
                 language = self.find_closest_match(language)
-                print('in memory')
         
         return language.squeeze() 
 
