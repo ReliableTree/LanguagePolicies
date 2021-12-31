@@ -29,6 +29,7 @@ class NetworkTorch(nn.Module):
         self.data_path = data_path
         self.use_transformer = use_transformer
         self.use_tboard = tboard
+        self.embedding_memory = {}
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -69,16 +70,18 @@ class NetworkTorch(nn.Module):
     def train(self, epochs, model_params):
         self.global_step = 0
         for epoch in range(epochs):
+            self.model.reset_memory()
             rel_epoch = epoch/epochs
             print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
             validation_loss = 0.0
             train_loss = []
-            model_params['obj_embedding']['train_embedding']  = rel_epoch < 0.3
-            print(f'train embedding: {model_params["obj_embedding"]["train_embedding"]}')
-            
+            model_params['obj_embedding']['train_embedding']  = rel_epoch < 1.1
+            #print(f'train embedding: {model_params["obj_embedding"]["train_embedding"]}')
+            self.model.model_setup['train'] = True
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                if (step+1) % 100 == 0:
-                    validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)                    
+                if (step+1) % 10 == 0:
+                    validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)   
+                    self.model.model_setup['train'] = True                 
                 train_loss.append(self.step(d_in, d_out, train=True, model_params=model_params))
                 
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
@@ -109,79 +112,79 @@ class NetworkTorch(nn.Module):
             return None
     def runValidation(self, quick=False, pnt=True, epoch = 0, save = False, model_params = {}): 
         model_params = copy.deepcopy(model_params) #dont change model params globally
+        self.model.model_setup['train'] = False
         #with torch.no_grad():
-        if True:
-            if (not quick) and (not model_params['quick_val']):
-                print("Running full validation...")
-            val_loss = []
-            val_loss_opt = []
+        #self.optimizer.zero_grad()
+        if (not quick) and (not model_params['quick_val']):
+            print("Running full validation...")
+        val_loss = []
+        val_loss_opt = []
+        model_params['contr_trans']['recursive'] = False
+        for step, (d_in, d_out) in enumerate(self.val_ds):
+            loss = self.step(d_in, d_out, train=False, model_params=model_params)
+            #loss = self.step(d_in, d_out, train=False, recursive = True)
+            val_loss.append(loss)
+            
+            
+            loss_opt = self.step(d_in, d_out, train=False, model_params=model_params, optimize=True)
+            #loss = self.step(d_in, d_out, train=False, recursive = True)
+            val_loss_opt.append(loss_opt)
+            
+            if quick or model_params['quick_val']:
+                break
+
+        if self.use_tboard:
+            do_dim = d_in[0].size(0)
+            self.model.eval()
+                            
+            in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
+            in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
+            in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
+            d_in_graphs  = (in0, in1, in2)
             model_params['contr_trans']['recursive'] = False
-            for step, (d_in, d_out) in enumerate(self.val_ds):
-                loss = self.step(d_in, d_out, train=False, model_params=model_params)
-                #loss = self.step(d_in, d_out, train=False, recursive = True)
-                val_loss.append(loss)
-                
-                
-                loss_opt = self.step(d_in, d_out, train=False, model_params=model_params, optimize=True)
-                #loss = self.step(d_in, d_out, train=False, recursive = True)
-                val_loss_opt.append(loss_opt)
-                
-                
-                if quick or model_params['quick_val']:
-                    break
+            out_model = self.model(d_in_graphs)
+            self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
+                            (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
+                            out_model,
+                            save=save,
+                            name_plot = str(step),
+                            epoch=epoch,
+                            model_params=model_params)
 
-            if self.use_tboard:
-                do_dim = d_in[0].size(0)
-                self.model.eval()
-                                
-                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
-                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
-                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
-                d_in_graphs  = (in0, in1, in2)
-                model_params['contr_trans']['recursive'] = False
-                out_model = self.model(d_in_graphs)
-                self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
-                                (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                                out_model,
-                                save=save,
-                                name_plot = str(step),
-                                epoch=epoch,
-                                model_params=model_params)
+            in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
+            in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
+            in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
+            d_in_graphs  = (in0, in1, in2)
 
-                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
-                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
-                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
-                d_in_graphs  = (in0, in1, in2)
+            out_model = self.model(d_in_graphs, optimize=True)
+            self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
+                            (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
+                            out_model,
+                            save=save,
+                            name_plot = 'optimized_' + str(step),
+                            epoch=epoch,
+                            model_params=model_params)
 
-                out_model = self.model(d_in_graphs, optimize=True)
-                self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
-                                (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                                out_model,
-                                save=save,
-                                name_plot = 'optimized_' + str(step),
-                                epoch=epoch,
-                                model_params=model_params)
-
-                self.model.train()
+            self.model.train()
 
 
-            #self.model.eval()
-            #out_model_tf = [self.torch2tf(out_model[0]), [self.torch2tf(ele) for ele in out_model[1]]]
-            #d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
-            #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
+        #self.model.eval()
+        #out_model_tf = [self.torch2tf(out_model[0]), [self.torch2tf(ele) for ele in out_model[1]]]
+        #d_out_graphs = (tf.tile(tf.expand_dims(d_out[0][0], 0),[50,1,1]), tf.tile(tf.expand_dims(d_out[1][0], 0),[50,1]), 
+        #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
 
-            loss = np.mean(val_loss)
-            loss_opt = np.mean(val_loss_opt)
-            if pnt:
-                print("  Validation Loss: {:.6f}".format(loss))
-                print("  Validation Loss optimized: {:.6f}".format(loss_opt))
-            if not quick:
-                if loss < self.global_best_loss_val:
-                    self.global_best_loss_val = loss
-                    if self.use_tboard:
-                        self.model.saveModelToFile(add=self.logname + "/best_val/", data_path= self.data_path)
-                    print(f'best val model saved with: {loss}')
-            return np.mean(val_loss)
+        loss = np.mean(val_loss)
+        loss_opt = np.mean(val_loss_opt)
+        if pnt:
+            print("  Validation Loss: {:.6f}".format(loss))
+            print("  Validation Loss optimized: {:.6f}".format(loss_opt))
+        if not quick:
+            if loss < self.global_best_loss_val:
+                self.global_best_loss_val = loss
+                if self.use_tboard:
+                    self.model.saveModelToFile(add=self.logname + "/best_val/", data_path= self.data_path)
+                print(f'best val model saved with: {loss}')
+        return np.mean(val_loss)
 
     def step(self, d_in, d_out, train, model_params, optimize = False):
         generated, attention, delta_t, weights, phase, loss_atn = d_out

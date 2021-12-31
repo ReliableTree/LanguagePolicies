@@ -95,7 +95,10 @@ class PolicyTranslationModelTorch(nn.Module):
             self.plan_nn = None
             self.prediction_nn = None
 
+        self.mem = None
 
+    def reset_memory(self):
+        self.mem = None
 
     def build_lang_gru(self, input, bias = True):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
@@ -110,6 +113,7 @@ class PolicyTranslationModelTorch(nn.Module):
         if (self.last_language is None) or (not torch.equal(language_in, self.last_language)):
             pass   #reactivate if recurrent
         self.language = self.get_language(language_in)               #16 x 32
+
         # Calculate attention and expand it to match the feature size
         inpt_features = self.get_inpt_features(features, gt_attention, robot)
 
@@ -130,6 +134,11 @@ class PolicyTranslationModelTorch(nn.Module):
                 return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7], predicted_loss_p
         else:
             return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7]
+
+    def find_closest_match(self, inpt):
+        diff = ((inpt.unsqueeze(0) - self.mem.unsqueeze(1))**2).sum(dim=-1)
+        best_match = torch.argmin(diff, dim=0)
+        return self.mem[best_match]
 
     def optimize(self, inpt, input_features):
 
@@ -189,6 +198,18 @@ class PolicyTranslationModelTorch(nn.Module):
             _, language  = self.lng_gru(language) 
         if 'bottleneck' in self.model_setup['lang_trans'] and self.model_setup['lang_trans']['bottleneck']:
             language = nn.Softmax(dim=-1)(language.squeeze())
+
+        language = language.squeeze()
+        if self.model_setup['use_memory']:
+            if self.model_setup['train']:
+                if self.mem is None:
+                    self.mem = language
+                else:
+                    self.mem = torch.cat((self.mem, language))
+            else:
+                language = self.find_closest_match(language)
+                print('in memory')
+        
         return language.squeeze() 
 
     def get_max_features(self, features, gt_attention = None):
@@ -282,3 +303,4 @@ class PolicyTranslationModelTorch(nn.Module):
         torch.save(self.state_dict(), path_to_file + "policy_translation_h")
         with open(path_to_file + 'model_setup.pkl', 'wb') as f:
             pickle.dump(self.model_setup, f)  
+        torch.save(self.mem, path_to_file + "memory")
