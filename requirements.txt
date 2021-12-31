@@ -6,3 +6,4 @@ sklearn
 tensorflow-probability==0.9.0
 pycurl
 cffi==1.11.5
+prettytable

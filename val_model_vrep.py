@@ -402,7 +402,7 @@ class Simulator(object):
         successfull = 0
         val_data    = {}
         for fid, fn in enumerate(files):
-            if fid in [101]:
+            if True:
                 nn_trajectory  = []
                 ro_trajectory  = []
                 torch.cuda.empty_cache()
@@ -470,7 +470,7 @@ class Simulator(object):
         successfull         = 0
         val_data            = {}
         for fid, fn in enumerate(files):
-            if fid in [42]:
+            if True:
                 print("Phase 2 Run {}/{}".format(fid, len(files)))
                 eval_data = {}
                 fpath     = fn + "2.json"

@@ -75,6 +75,7 @@ class NetworkTorch(nn.Module):
             train_loss = []
             model_params['obj_embedding']['train_embedding']  = rel_epoch < 0.3
             print(f'train embedding: {model_params["obj_embedding"]["train_embedding"]}')
+            
             for step, (d_in, d_out) in enumerate(self.train_ds):
                 if (step+1) % 100 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)                    
@@ -85,7 +86,7 @@ class NetworkTorch(nn.Module):
                     self.total_steps += 1
                 self.global_step += 1
             self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
-
+            
             if (epoch + 1) % model_params['val_every'] == 0:
                 print(f'logname: {self.logname}')
                 self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params)
@@ -108,33 +109,30 @@ class NetworkTorch(nn.Module):
             return None
     def runValidation(self, quick=False, pnt=True, epoch = 0, save = False, model_params = {}): 
         model_params = copy.deepcopy(model_params) #dont change model params globally
-        with torch.no_grad():
+        #with torch.no_grad():
+        if True:
             if (not quick) and (not model_params['quick_val']):
                 print("Running full validation...")
             val_loss = []
+            val_loss_opt = []
             model_params['contr_trans']['recursive'] = False
             for step, (d_in, d_out) in enumerate(self.val_ds):
                 loss = self.step(d_in, d_out, train=False, model_params=model_params)
                 #loss = self.step(d_in, d_out, train=False, recursive = True)
                 val_loss.append(loss)
+                
+                
+                loss_opt = self.step(d_in, d_out, train=False, model_params=model_params, optimize=True)
+                #loss = self.step(d_in, d_out, train=False, recursive = True)
+                val_loss_opt.append(loss_opt)
+                
+                
                 if quick or model_params['quick_val']:
                     break
 
             if self.use_tboard:
                 do_dim = d_in[0].size(0)
                 self.model.eval()
-                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
-                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
-                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
-                d_in_graphs  = (in0, in1, in2)
-                out_model = self.model(d_in_graphs)
-                self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
-                                (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                                out_model,
-                                save=save,
-                                name_plot = 'recursive_' + str(step),
-                                epoch=epoch,
-                                model_params=model_params)
                                 
                 in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
                 in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
@@ -149,6 +147,21 @@ class NetworkTorch(nn.Module):
                                 name_plot = str(step),
                                 epoch=epoch,
                                 model_params=model_params)
+
+                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
+                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
+                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
+                d_in_graphs  = (in0, in1, in2)
+
+                out_model = self.model(d_in_graphs, optimize=True)
+                self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
+                                (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
+                                out_model,
+                                save=save,
+                                name_plot = 'optimized_' + str(step),
+                                epoch=epoch,
+                                model_params=model_params)
+
                 self.model.train()
 
 
@@ -158,8 +171,10 @@ class NetworkTorch(nn.Module):
             #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
 
             loss = np.mean(val_loss)
+            loss_opt = np.mean(val_loss_opt)
             if pnt:
                 print("  Validation Loss: {:.6f}".format(loss))
+                print("  Validation Loss optimized: {:.6f}".format(loss_opt))
             if not quick:
                 if loss < self.global_best_loss_val:
                     self.global_best_loss_val = loss
@@ -168,12 +183,12 @@ class NetworkTorch(nn.Module):
                     print(f'best val model saved with: {loss}')
             return np.mean(val_loss)
 
-    def step(self, d_in, d_out, train, model_params):
+    def step(self, d_in, d_out, train, model_params, optimize = False):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
         if not train:
             self.model.eval()
         if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-            result = self.model(d_in, gt_attention = attention, gt_tjkt=generated)
+            result = self.model(d_in, gt_attention = attention, gt_tjkt=generated, optimize=optimize)
         else:
             result = self.model(d_in, gt_attention = attention)
         if not train:

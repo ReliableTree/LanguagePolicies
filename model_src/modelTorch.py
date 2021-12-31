@@ -101,7 +101,7 @@ class PolicyTranslationModelTorch(nn.Module):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
 
 
-    def forward(self, inputs, gt_attention = None, gt_tjkt=None, mean_over_do = False):
+    def forward(self, inputs, gt_attention = None, gt_tjkt=None, mean_over_do = False, optimize = False):
 
         language_in   = inputs[0]
         features   = inputs[1]                          #16x6x5 first entry is object class
@@ -114,6 +114,9 @@ class PolicyTranslationModelTorch(nn.Module):
         inpt_features = self.get_inpt_features(features, gt_attention, robot)
 
         current_plan = self.get_plan(inpt_features) #350x16x8
+
+        if optimize:
+            current_plan = self.optimize(current_plan, inpt_features)
 
         if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
             predicted_loss_p, predicted_loss_gt = self.pred_forward(inpt_features, current_plan, gt_tjkt, mean_over_do)
@@ -128,6 +131,32 @@ class PolicyTranslationModelTorch(nn.Module):
         else:
             return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7]
 
+    def optimize(self, inpt, input_features):
+        import copy
+        opt_inpt = torch.clone(inpt)
+        opt_inpt = opt_inpt.detach()
+        opt_inpt = torch.zeros_like(opt_inpt)
+        print('before')
+        print(opt_inpt[0,0])
+        #print(opt_inpt)
+        opt_inpt.requires_grad = True
+        opt = torch.optim.Adam([opt_inpt], lr=1e20)
+        epochs = 1000
+        self.prediction_nn_copy = copy.deepcopy(self.prediction_nn)
+        opt_input_features = torch.zeros_like(input_features)
+
+        for i in range(epochs):
+            opt.zero_grad()
+            loss = (self.pred_forward(inpt_features=opt_input_features, current_plan=opt_inpt, freeze = False)[0]).sum()
+            #print(f'loss in optimizer: {loss}')
+            loss.backward()
+            opt.step()
+            if i%100==0:
+                #print(opt_inpt.shape)
+                print(opt_inpt._grad[0,0])
+                print(opt_inpt[0,0])
+                print(f'loss in optimizer: {loss}')
+        return opt_inpt
 
     def get_language(self, language_in):
         self.last_language = language_in
@@ -203,14 +232,8 @@ class PolicyTranslationModelTorch(nn.Module):
             self.plan_nn = TransformerUpConv(num_upconvs=num_upconvs, stride=stride, ntoken=inpt_features.size(-1), d_output=d_output, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=350, use_layernorm=use_layernorm).to(inpt_features.device)
         return self.plan_nn.forward(inpt_features) #350x16x8
     
-    def pred_forward(self, inpt_features, current_plan, gt_tjkt, mean_over_do):
-        num_upconvs = self.model_setup['contr_trans']['plan_nn']['plan']['num_upconvs']
-        stride= self.model_setup['contr_trans']['plan_nn']['plan']['stride']
-        d_output= self.model_setup['contr_trans']['plan_nn']['plan']['d_output']
-        nhead= self.model_setup['contr_trans']['plan_nn']['plan']['nhead']
-        d_hid= self.model_setup['contr_trans']['plan_nn']['plan']['d_hid']
-        nlayers= self.model_setup['contr_trans']['plan_nn']['plan']['nlayers']
-        use_layernorm = self.model_setup['contr_trans']['plan_nn']['plan']['use_layernorm']
+    def pred_forward(self, inpt_features, current_plan, gt_tjkt=None, mean_over_do=False, freeze = False):
+        import copy
         if mean_over_do:
             c_plan = current_plan.mean(dim=1).unsqueeze(1).repeat([1,current_plan.size(1),1]) #350 x 16 x 53
         else:
@@ -218,8 +241,18 @@ class PolicyTranslationModelTorch(nn.Module):
         pred_features = inpt_features.repeat([c_plan.size(0), 1, 1]) #350 x 16 x 53
         pred_features_p = torch.cat((pred_features, c_plan[:,:,:7]), dim = -1) #350x16x60
         if self.prediction_nn is None:
+            num_upconvs = self.model_setup['contr_trans']['plan_nn']['plan']['num_upconvs']
+            stride= self.model_setup['contr_trans']['plan_nn']['plan']['stride']
+            nhead= self.model_setup['contr_trans']['plan_nn']['plan']['nhead']
+            d_hid= self.model_setup['contr_trans']['plan_nn']['plan']['d_hid']
+            nlayers= self.model_setup['contr_trans']['plan_nn']['plan']['nlayers']
+            use_layernorm = self.model_setup['contr_trans']['plan_nn']['plan']['use_layernorm']
             self.prediction_nn = TransformerUpConv(num_upconvs=num_upconvs, stride=stride, ntoken=pred_features_p.size(-1), d_output=1, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=350, use_layernorm=use_layernorm, upconv=False).to(current_plan.device)
-        predicted_loss_p = self.prediction_nn(pred_features_p).squeeze() #1x16x1
+
+        if freeze:
+            predicted_loss_p = self.prediction_nn_copy(pred_features_p).squeeze() #1x16x1
+        else:
+            predicted_loss_p = self.prediction_nn(pred_features_p).squeeze() #1x16x1
         if gt_tjkt is not None:
             pred_features_gt = torch.cat((pred_features, gt_tjkt.transpose(0,1)), dim=-1) #350x16x60
             predicted_loss_gt = self.prediction_nn(pred_features_gt).squeeze()
