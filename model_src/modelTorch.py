@@ -115,8 +115,8 @@ class PolicyTranslationModelTorch(nn.Module):
 
         current_plan = self.get_plan(inpt_features) #350x16x8
 
-        if optimize:
-            current_plan = self.optimize(current_plan, inpt_features)
+        #if optimize:
+        #    current_plan = self.optimize(current_plan, inpt_features)
 
         if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
             predicted_loss_p, predicted_loss_gt = self.pred_forward(inpt_features, current_plan, gt_tjkt, mean_over_do)
@@ -132,6 +132,7 @@ class PolicyTranslationModelTorch(nn.Module):
             return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7]
 
     def optimize(self, inpt, input_features):
+
         import copy
         opt_inpt = torch.clone(inpt)
         opt_inpt = opt_inpt.detach()
@@ -186,6 +187,8 @@ class PolicyTranslationModelTorch(nn.Module):
             if self.lng_gru is None:
                 self.build_lang_gru(language)
             _, language  = self.lng_gru(language) 
+        if 'bottleneck' in self.model_setup['lang_trans'] and self.model_setup['lang_trans']['bottleneck']:
+            language = nn.Softmax(dim=-1)(language.squeeze())
         return language.squeeze() 
 
     def get_max_features(self, features, gt_attention = None):
