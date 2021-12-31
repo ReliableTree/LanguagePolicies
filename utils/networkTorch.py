@@ -79,7 +79,7 @@ class NetworkTorch(nn.Module):
             #print(f'train embedding: {model_params["obj_embedding"]["train_embedding"]}')
             self.model.model_setup['train'] = True
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                if (step+1) % 10 == 0:
+                if (step+1) % 400 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)   
                     self.model.model_setup['train'] = True                 
                 train_loss.append(self.step(d_in, d_out, train=True, model_params=model_params))
