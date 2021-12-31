@@ -101,13 +101,15 @@ if __name__ == '__main__':
         model_setup = {
             'obj_embedding': {'use_obj_embedding':True, 'train_embedding':True, 'EIS':30, 'EOS':10},
             'attn_trans' : {'use_attn_trans':True},
+            'train'      : True,
+            'use_memory' : True,
             'lang_trans' :  {
                 'use_lang_trans' : True,
-                'd_output' : 3,
-                'd_model'  : 100,
+                'd_output' : 30,
+                'd_model'  : 42,
                 'nhead'    : 2,
                 'nlayers'  : 2,
-                'bottleneck' : True
+                'bottleneck' : False
             },
             'contr_trans': {
                 'use_contr_trans':True,
