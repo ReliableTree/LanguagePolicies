@@ -359,7 +359,7 @@ class NetworkTorch(nn.Module):
         target_trj, attention, delta_t, weights  = d_out
         gen_trj = result['gen_trj']
         atn     = result['atn']
-        phase   = result['phase']
+        phase   = result['phs']
         if model_params['contr_trans']['use_gen2']:
             gen_gen_trj = result['gen_gen_trj']
         elif 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
