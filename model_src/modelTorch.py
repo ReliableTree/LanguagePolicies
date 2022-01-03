@@ -163,7 +163,8 @@ class PolicyTranslationModelTorch(nn.Module):
         return in_memory[best_match], torch.min(diff)
 
     def is_pickup(self, robot):
-        comp_vec = torch.load('/home/hendrik/Documents/master_project/LokalData/start_pose/pickup_pose').to(robot.device)
+        comp_vec = torch.tensor([0.4499456882, 0.2921932340, 0.5975010395, 0.9999295473, 0.8829264045,
+        0.4917714894, 0.0000000000]).to(robot.device)
         return ((comp_vec - robot[0])**2).sum() < 1, comp_vec
 
     def optimize(self, inpt, input_features):
