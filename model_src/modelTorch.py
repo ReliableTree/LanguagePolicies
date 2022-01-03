@@ -138,14 +138,16 @@ class PolicyTranslationModelTorch(nn.Module):
             predicted_loss_p, predicted_loss_gt = self.pred_forward(inpt_features, current_plan, gt_tjkt, mean_over_do)
         
         current_plan = current_plan.transpose(0,1) #16x350x8
+        result = {}
+        result['gen_trj'] = current_plan[:,:,:7]
+        result['atn']     = self.obj_atn
+        result['phs']     = current_plan[:,:,7]
+        result['diff']    = diff
 
         if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
-            if gt_tjkt is not None:
-                return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7], predicted_loss_p, predicted_loss_gt
-            else:
-                return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7], predicted_loss_p, diff
-        else:
-            return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7], diff
+            result['loss_prediction'] = predicted_loss_p
+            result['loss_gt']         = predicted_loss_gt
+        return result
 
 
     def find_closest_match(self, name, inpt, robot):

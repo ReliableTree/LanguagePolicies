@@ -253,10 +253,14 @@ class NetworkService():
                 self.model.eval()
             with torch.no_grad():
                 self.model.train()
+                result = self.model(self.input_data)
+                generated = result['gen_trj']
+                self.atn = result['atn']
+                phase = result['phs']
+                self.diff = result['diff']
                 if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
-                    generated, self.atn, phase, pred_loss, self.diff = self.model(self.input_data)
-                else:
-                    generated, self.atn, phase, self.diff = self.model(self.input_data)
+                    pred_loss = result['loss_prediction']
+
             #print(f'time for one call: {time.perf_counter() - h}')
             #print(f'atn : {atn}')
             self.trj_gen    = generated.mean(axis=0)

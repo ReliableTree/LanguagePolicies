@@ -265,16 +265,15 @@ class NetworkTorch(nn.Module):
 
     def calculateLoss(self, d_out, result, model_params):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
-        if self.use_transformer:
-            if model_params['contr_trans']['use_gen2']:
-                gen_trj, gen_gen_trj, atn, phs                          = result
-            elif 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-                gen_trj, atn, phs, loss_prediction, loss_gt = result
-            else:
-                gen_trj, atn, phs                          = result
+        gen_trj = result['gen_trj']
+        atn = result['atn']
+        phs = result['phs']
+        if model_params['contr_trans']['use_gen2']:
+            gen_gen_trj = result['gen_gen_trj']
+        elif 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
+            loss_prediction = result['loss_prediction']
+            loss_gt = result['loss_gt']
 
-        else:
-            gen_trj, (atn, dmp_dt, phs, wght)                       = result  #gen trj = 32, 350, 7
         #fod_loss = gen_trj
         #weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
         weight_dim  = torch.tensor([1.0, 1.0, 1.0, 1.0, 1, 1.0, 1.], device = generated.device)
@@ -358,16 +357,14 @@ class NetworkTorch(nn.Module):
     def createGraphs(self, d_in, d_out, result, save = False, name_plot = '', epoch = 0, model_params={}):
         language, image, robot_states            = d_in
         target_trj, attention, delta_t, weights  = d_out
-        if not model_params['contr_trans']['use_contr_trans']:
-            gen_trj, (atn, dmp_dt, phase, wght)      = result
-        else:
-            if model_params['contr_trans']['use_gen2']:
-                gen_trj, gen_gen_trj, atn, phase = result
-            elif 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-                gen_trj, atn, phase, loss_prediction = result
-            else:
-                gen_trj, atn, phase = result
-            dmp_dt = None
+        gen_trj = result['gen_trj']
+        atn     = result['atn']
+        phase   = result['phase']
+        if model_params['contr_trans']['use_gen2']:
+            gen_gen_trj = result['gen_gen_trj']
+        elif 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
+            loss_prediction = result['loss_prediction']
+        dmp_dt = None
 
 
 
