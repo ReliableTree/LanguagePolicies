@@ -63,7 +63,7 @@ VAL_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/
 
 MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Model/NxmJWy8Egzz/best_val/policy_translation_h'
 MODEL_SETUP  = '/home/hendrik/Documents/master_project/LokalData/Model/NxmJWy8Egzz/best_val/model_setup.pkl'
-
+MEMORY_PATH  = '/home/hendrik/Documents/master_project/LokalData/Model/NxmJWy8Egzz/best_val/'
 
 
 from torch.utils.data import DataLoader
@@ -81,17 +81,21 @@ def setup_model(device = 'cpu', batch_size = 32):
     with open(MODEL_SETUP, 'rb') as f:
         model_setup = pickle.load(f)
         print(model_setup)
+    model_setup['use_memory'] = True
+    model_setup['train'] = True
     model   = PolicyTranslationModelTorch(od_path=FRCNN_PATH, glove_path=GLOVE_PATH, model_setup=model_setup).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-
-
+    if 'use_memory' in model_setup and model_setup['use_memory']:
+        print('use memory')
+        model.load_memory(MEMORY_PATH, ['start_position', 'cfeatures'])
     eval_data = TorchDataset(path = VAL_DATA_TORCH, device=device)
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
     network = NetworkTorch(model, data_path='/home/hendrik/Documents/master_project/LokalData', logname='LOGNAME', lr=LEARNING_RATE, lw_gen_trj = 0, lw_fod = 0,  lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
     network.setup_model(model_params=model_setup)
     model.load_state_dict(torch.load(MODEL_PATH, map_location='cuda:0'))
+
     return model
 
 class NetworkService():
@@ -109,6 +113,7 @@ class NetworkService():
         self.last_GRU_state = None
         with open(MODEL_SETUP, 'rb') as f:
             self.model_setup = pickle.load(f)
+            self.model_setup['train'] = True
         self.trj_gen = None
         print("Ready")
 
@@ -231,7 +236,7 @@ class NetworkService():
 
         robot           = np.asarray(self.history, dtype=np.float32)
         #robot           = np.asarray([list(req.robot)], dtype=np.float32)
-        do_dim = 32
+        do_dim = 100
         self.input_data = (
             torch.tensor(np.tile([self.language],[do_dim, 1]), dtype=torch.int64, device=self.device), 
             torch.tensor(np.tile([self.features],[do_dim, 1, 1]), dtype=torch.float32, device=self.device),
@@ -244,9 +249,9 @@ class NetworkService():
             with torch.no_grad():
                 self.model.train()
                 if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
-                    generated, self.atn, phase, pred_loss = self.model(self.input_data)
+                    generated, self.atn, phase, pred_loss, self.diff = self.model(self.input_data)
                 else:
-                    generated, self.atn, phase = self.model(self.input_data)
+                    generated, self.atn, phase, self.diff = self.model(self.input_data)
             #print(f'time for one call: {time.perf_counter() - h}')
             #print(f'atn : {atn}')
             self.trj_gen    = generated.mean(axis=0)
@@ -282,7 +287,7 @@ class NetworkService():
             #save_cfeature(cfeatures[0].numpy(), str(req.language))
         
         self.req_step += 1
-        return (res_trj.flatten().tolist(), [float(self.pred_loss.detach().mean())], 0, [0.], float(phase_value)) 
+        return (res_trj.flatten().tolist(), [float(self.pred_loss.detach().mean())], 0, [float(self.diff)], float(phase_value)) 
 
     
     def median_fiter(self, inpt, median_size):

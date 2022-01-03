@@ -1,9 +1,12 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
 import pickle
+from numpy.core.fromnumeric import mean
 import tensorflow as tf
 import numpy as np
 import pathlib
+
+from tensorflow.python.eager.context import device
 
 from model_src.attention import TopDownAttention
 from model_src.attentionTorch import TopDownAttentionTorch
@@ -95,10 +98,15 @@ class PolicyTranslationModelTorch(nn.Module):
             self.plan_nn = None
             self.prediction_nn = None
 
-        self.mem = None
+        self.memory = {}
 
     def reset_memory(self):
-        self.mem = None
+        for name in self.memory:
+            self.memory[name] = None
+
+    def load_memory(self, path, names):
+        for name in names:
+            self.memory[name] = torch.load(path + name, map_location='cuda:0')
 
     def build_lang_gru(self, input, bias = True):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
@@ -109,13 +117,17 @@ class PolicyTranslationModelTorch(nn.Module):
         language_in   = inputs[0]
         features   = inputs[1]                          #16x6x5 first entry is object class
         robot      = inputs[2]                           #16x350x7
+        if self.model_setup['use_memory']:
+            self.use_memory(robot[:,0], 'start_position')
 
         if (self.last_language is None) or (not torch.equal(language_in, self.last_language)):
             pass   #reactivate if recurrent
         self.language = self.get_language(language_in)               #16 x 32
 
         # Calculate attention and expand it to match the feature size
-        inpt_features = self.get_inpt_features(features, gt_attention, robot)
+        
+        inpt_features, diff = self.get_inpt_features(features, gt_attention, robot)
+        inpt_features = inpt_features[:,:1,:].repeat([1, inpt_features.size(1), 1])
 
         current_plan = self.get_plan(inpt_features) #350x16x8
 
@@ -131,14 +143,30 @@ class PolicyTranslationModelTorch(nn.Module):
             if gt_tjkt is not None:
                 return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7], predicted_loss_p, predicted_loss_gt
             else:
-                return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7], predicted_loss_p
+                return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7], predicted_loss_p, diff
         else:
-            return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7]
+            return current_plan[:,:,:7], self.obj_atn, current_plan[:,:,7], diff
 
-    def find_closest_match(self, inpt):
-        diff = ((inpt.unsqueeze(0) - self.mem.unsqueeze(1))**2).sum(dim=-1)
+
+    def find_closest_match(self, name, inpt, robot):
+        if robot is not None:
+            pickup, comp_vec = self.is_pickup(robot)
+            dist = ((self.memory['start_position']-comp_vec)**2).sum(dim = -1)
+            if pickup:
+                in_memory = self.memory[name][dist < 0.01]
+            else:
+                in_memory = self.memory[name][dist > 0.01]
+            print(f'pickup {pickup}')
+        else:
+            in_memory = self.memory[name]
+        diff = ((inpt.unsqueeze(0) - in_memory.unsqueeze(1))**2).sum(dim=-1)
+        print(f'diff: {torch.min(diff) }')
         best_match = torch.argmin(diff, dim=0)
-        return self.mem[best_match]
+        return in_memory[best_match], torch.min(diff)
+
+    def is_pickup(self, robot):
+        comp_vec = torch.load('/home/hendrik/Documents/master_project/LokalData/start_pose/pickup_pose').to(robot.device)
+        return ((comp_vec - robot[0])**2).sum() < 1, comp_vec
 
     def optimize(self, inpt, input_features):
 
@@ -200,14 +228,15 @@ class PolicyTranslationModelTorch(nn.Module):
             language = nn.Softmax(dim=-1)(language.squeeze())
 
         language = language.squeeze()
-        if self.model_setup['use_memory']:
+        '''if self.model_setup['use_memory']:
             if self.model_setup['train']:
                 if self.mem is None:
                     self.mem = language
                 else:
                     self.mem = torch.cat((self.mem, language))
             else:
-                language = self.find_closest_match(language)
+                print('load')
+                language = self.find_closest_match(language)'''
         
         return language.squeeze() 
 
@@ -238,10 +267,28 @@ class PolicyTranslationModelTorch(nn.Module):
         counter = torch.arange(features.size(0))
         return obj_feature_embedding[(counter, main_obj)]
 
+    def use_memory(self, vector, name, robot = None):
+        diff = 0
+        if self.model_setup['train'] and False:
+            if (name not in self.memory) or (self.memory[name] is None):
+                self.memory[name] = vector
+            else:
+                self.memory[name] = torch.cat((self.memory[name], vector))
+            result = vector
+        else:
+            print('load')
+            result, diff = self.find_closest_match(name, vector, robot)
+            if name == 'cfeatures':
+                result[:,:4] = vector[:,:4]
+        return result, diff
+
     def get_inpt_features(self, features, gt_attention, robot):
         features_max = self.get_max_features(features, gt_attention)          #16x5
         cfeatures = torch.cat((features_max, self.language), axis=1)   #16x46
-        return torch.cat((cfeatures, robot[:,0]), dim=-1).unsqueeze(0)  #1x16x46+7 = 1x16x53
+        diff = 0
+        if self.model_setup['use_memory']:
+            cfeatures, diff = self.use_memory(cfeatures, 'cfeatures', robot[:,0])
+        return torch.cat((cfeatures, robot[:,0]), dim=-1).unsqueeze(0), diff  #1x16x46+7 = 1x16x53
 
     def get_plan(self, inpt_features):
         if self.plan_nn is None:
@@ -302,4 +349,5 @@ class PolicyTranslationModelTorch(nn.Module):
         torch.save(self.state_dict(), path_to_file + "policy_translation_h")
         with open(path_to_file + 'model_setup.pkl', 'wb') as f:
             pickle.dump(self.model_setup, f)  
-        torch.save(self.mem, path_to_file + "memory")
+        for name in self.memory:
+            torch.save(self.memory[name], path_to_file + name)

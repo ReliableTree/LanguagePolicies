@@ -34,7 +34,7 @@ HEADLESS            = False
 USE_SHAPE_SIZE      = True
 # Run on the test data, or start the simulator in manual mode 
 # (manual mode will allow you to generate environments and type in your own commands)
-RUN_ON_TEST_DATA    = True
+RUN_ON_TEST_DATA    = False
 # How many of the 100 test-data do you want to test?
 NUM_TESTED_DATA     = 100
 # Where to find the normailization?
@@ -242,11 +242,12 @@ class Simulator(object):
         trajectory = np.asarray(result.trajectory).reshape(-1, 7)
         trajectory = self.restoreValues(trajectory, norm[0,:], norm[1,:])
         phase      = float(result.phase)
+        diff = float(result.weights[0])
         if predict_loss:
             pred_loss = float(torch.tensor(result.confidence[0]).mean())
-            return trajectory, phase, pred_loss
+            return trajectory, phase, pred_loss, diff
         else:
-            return trajectory, phase
+            return trajectory, phase, diff
     
     def normalize(self, value, v_min, v_max):
         if type(value) == list:
@@ -402,7 +403,7 @@ class Simulator(object):
         successfull = 0
         val_data    = {}
         for fid, fn in enumerate(files):
-            if True:
+            if fid == 73 and False:
                 nn_trajectory  = []
                 ro_trajectory  = []
                 torch.cuda.empty_cache()
@@ -430,7 +431,7 @@ class Simulator(object):
                 while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5):
                     state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
                     cnt += 1
-                    tf_trajectory, phase, pred_loss = self.predictTrajectory(data["voice"], state, cnt, predict_loss=True)
+                    tf_trajectory, phase, pred_loss, diff = self.predictTrajectory(data["voice"], state, cnt, predict_loss=True)
                     r_state    = tf_trajectory[-1,:]
                     eval_data["trajectory"]["state"].append(r_state.tolist())
                     nn_trajectory.append(r_state.tolist())
@@ -470,7 +471,7 @@ class Simulator(object):
         successfull         = 0
         val_data            = {}
         for fid, fn in enumerate(files):
-            if True:
+            if fid == 17:
                 print("Phase 2 Run {}/{}".format(fid, len(files)))
                 eval_data = {}
                 fpath     = fn + "2.json"
@@ -506,7 +507,7 @@ class Simulator(object):
                 while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5)  and cnt < 300:
                     state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
                     cnt += 1
-                    tf_trajectory, phase, pred_loss = self.predictTrajectory(data["voice"], self._getRobotState(), cnt, predict_loss=True)
+                    tf_trajectory, phase, pred_loss, diff = self.predictTrajectory(data["voice"], self._getRobotState(), cnt, predict_loss=True)
                     r_state              = tf_trajectory[-1,:]
                     eval_data["trajectory"]["state"].append(r_state.tolist())
                     r_state[6]           = r_state[6]
@@ -653,13 +654,19 @@ class Simulator(object):
             print("Running Task: " + self.rm_voice)
         elif self.rm_voice != "" and  d_in == "":
             self.cnt += 1
-            tf_trajectory, phase = self.predictTrajectory(self.rm_voice, self._getRobotState(), self.cnt)
+            tf_trajectory, phase, diff = self.predictTrajectory(self.rm_voice, self._getRobotState(), self.cnt)
+            if diff >=0.1:
+                self.node.get_logger().info('Task not understood. Skipping execution.')
+                self._stopRobotMovement()
+                self.rm_voice = ""
+                return True
+            
             r_state              = tf_trajectory[-1,:]
             self.last_gripper    = r_state[6]
             self._setJointVelocityFromTarget(r_state)
             self._maybeDropBall(r_state)
 
-            if phase >=0.92:
+            if phase >=0.98:
             #if self.cnt >= 250 :
                 self.node.get_logger().info("Finished running trajectory with " + str(self.cnt) + " steps")
                 self._stopRobotMovement()

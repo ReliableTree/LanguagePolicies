@@ -151,6 +151,8 @@ if __name__ == '__main__':
                 setup_path = args[args.index('-model') + 1] + 'model_setup.pkl'
                 with open(setup_path, 'rb') as f:
                     model_setup = pickle.load(f)
+                model_setup['use_memory'] = True
+                model_setup['train']      = True
                 print('load model')
 
         epochs = 200

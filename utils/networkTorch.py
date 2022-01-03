@@ -88,6 +88,8 @@ class NetworkTorch(nn.Module):
                 if epoch == 0:
                     self.total_steps += 1
                 self.global_step += 1
+                if step > 3:
+                    pass#break
             self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
             
             if (epoch + 1) % model_params['val_every'] == 0:
