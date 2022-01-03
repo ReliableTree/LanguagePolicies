@@ -190,14 +190,14 @@ class NetworkTorch(nn.Module):
 
     def step(self, d_in, d_out, train, model_params, optimize = False):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
-        if not train:
+        if 'use_dropout' in model_params and model_params['use_dropout']:
+            self.model.train()
+        else:
             self.model.eval()
         if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
             result = self.model(d_in, gt_attention = attention, gt_tjkt=generated, optimize=optimize)
         else:
             result = self.model(d_in, gt_attention = attention)
-        if not train:
-            self.model.train()
         
         loss, debug_dict = self.calculateLoss(d_out, result, model_params)
         #loss, (atn, trj, dt, phs, wght, rel_obj) = self.calculateLoss(d_out, result, train)
@@ -225,6 +225,7 @@ class NetworkTorch(nn.Module):
                 for para, value in debug_dict.items():
                     self.tboard.addTrainScalar("Loss " + para, value, self.global_step)
         else:
+            self.model.eval()
             if self.last_written_step != self.global_step:
                 if self.use_tboard:
                     self.last_written_step = self.global_step

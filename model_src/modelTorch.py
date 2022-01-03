@@ -156,11 +156,9 @@ class PolicyTranslationModelTorch(nn.Module):
                 in_memory = self.memory[name][dist < 0.01]
             else:
                 in_memory = self.memory[name][dist > 0.01]
-            print(f'pickup {pickup}')
         else:
             in_memory = self.memory[name]
         diff = ((inpt.unsqueeze(0) - in_memory.unsqueeze(1))**2).sum(dim=-1)
-        print(f'diff: {torch.min(diff) }')
         best_match = torch.argmin(diff, dim=0)
         return in_memory[best_match], torch.min(diff)
 
@@ -269,14 +267,13 @@ class PolicyTranslationModelTorch(nn.Module):
 
     def use_memory(self, vector, name, robot = None):
         diff = 0
-        if self.model_setup['train'] and False:
+        if self.model_setup['train']:
             if (name not in self.memory) or (self.memory[name] is None):
                 self.memory[name] = vector
             else:
                 self.memory[name] = torch.cat((self.memory[name], vector))
             result = vector
         else:
-            print('load')
             result, diff = self.find_closest_match(name, vector, robot)
             if name == 'cfeatures':
                 result[:,:4] = vector[:,:4]

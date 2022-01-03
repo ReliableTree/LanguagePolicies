@@ -71,7 +71,7 @@ class TFToTorchConverter():
             break
 class TorchDataset(torch.utils.data.Dataset):
   'Characterizes a dataset for PyTorch'
-  def __init__(self, path, device = 'cpu', on_device = False):
+  def __init__(self, path, device = 'cpu', on_device = False, size = 1):
         'Initialization'
         with open(path, 'rb') as fp:   # Unpickling
             self.dataset = pickle.load(fp)
@@ -82,6 +82,8 @@ class TorchDataset(torch.utils.data.Dataset):
             self.data = ondevice_data
         self.device = device
         self.onDevice = on_device
+        
+
 
   def __len__(self):
         'Denotes the total number of samples'

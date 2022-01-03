@@ -82,7 +82,8 @@ def setup_model(device = 'cpu', batch_size = 32):
         model_setup = pickle.load(f)
         print(model_setup)
     model_setup['use_memory'] = True
-    model_setup['train'] = True
+    model_setup['train'] = False
+    model_setup['use_dropout'] = True
     model   = PolicyTranslationModelTorch(od_path=FRCNN_PATH, glove_path=GLOVE_PATH, model_setup=model_setup).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
@@ -246,6 +247,10 @@ class NetworkService():
         #HENDRIK
         h = time.perf_counter()
         if self.trj_gen is None:
+            if self.model.model_setup['use_dropout']:
+                self.model.train()
+            else:
+                self.model.eval()
             with torch.no_grad():
                 self.model.train()
                 if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:

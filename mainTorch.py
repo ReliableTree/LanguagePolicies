@@ -59,10 +59,15 @@ def init_weights(network):
         elif 'weight' in para_name:
             torch.nn.init.orthogonal_(para)
 
-def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, tboard, model_setup):
+def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, tboard, model_setup, train_size = 1):
     model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], model_setup=model_setup).to(device)
     #print(path_dict['TRAIN_DATA_TORCH'])
     train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
+    train_indices = torch.randperm(int(len(train_data)))
+    train_indices = train_indices[:int(len(train_indices)*train_size)]
+    print(len(train_indices))
+    train_data = torch.utils. data.Subset(train_data, train_indices)
+    print(f'traindata len = {len(train_data)}')
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     eval_data = TorchDataset(path = path_dict['VAL_DATA_TORCH'], device=device)
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
@@ -168,10 +173,14 @@ if __name__ == '__main__':
             tboard = (args[args.index('-tboard') + 1]) == 'True'
             print(f'tboard: {tboard}')
 
+        train_size = 1
+        if '-train_size' in args:
+            train_size = float(args[args.index('-train_size') + 1])
+
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
         print(f'logname: {logname}')
-        network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard, model_setup=model_setup)
+        network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard, model_setup=model_setup, train_size=train_size)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 
