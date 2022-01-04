@@ -127,7 +127,7 @@ if __name__ == '__main__':
                 'use_mask'     : False,
                 'use_counter_embedding': False,
                 'count_emb_dim' : 20,
-                'predictionNN'  : True,
+                'predictionNN'  : False,
                 'plan_nn'       : {
                     'use_plan_nn'   : True,
                     'plan'     :{

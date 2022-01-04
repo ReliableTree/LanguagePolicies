@@ -127,7 +127,7 @@ class PolicyTranslationModelTorch(nn.Module):
         # Calculate attention and expand it to match the feature size
         
         inpt_features, diff = self.get_inpt_features(features, gt_attention, robot)
-        inpt_features = inpt_features[:,:1,:].repeat([1, inpt_features.size(1), 1])
+        #inpt_features = inpt_features[:,:1,:].repeat([1, inpt_features.size(1), 1])
 
         current_plan = self.get_plan(inpt_features) #350x16x8
 
@@ -287,7 +287,8 @@ class PolicyTranslationModelTorch(nn.Module):
         cfeatures = torch.cat((features_max, self.language), axis=1)   #16x46
         diff = 0
         if self.model_setup['use_memory']:
-            cfeatures, diff = self.use_memory(cfeatures, 'cfeatures', robot[:,0])
+            cfeatures, diff = self.use_memory(cfeatures, 'cfeatures', robot[:,0]) #16,44
+            cfeatures[:,:4] = features_max[:,:4]
         return torch.cat((cfeatures, robot[:,0]), dim=-1).unsqueeze(0), diff  #1x16x46+7 = 1x16x53
 
     def get_plan(self, inpt_features):
