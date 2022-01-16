@@ -27,14 +27,14 @@ import torch
 from utils.graphsTorch import TBoardGraphsTorch
 
 # Default robot position. You don't need to change this
-DEFAULT_UR5_JOINTS  = [105.0, -30.0, 120.0, 90.0, 60.0, 90.0]
+DEFAULT_UR5_JOINTS  = [80.0, -30.0, 120.0, 90.0, 60.0, 90.0]#[105.0, -30.0, 120.0, 90.0, 60.0, 90.0]
 # Evaluate headless or not
 HEADLESS            = False
 # This is a debug variable... 
 USE_SHAPE_SIZE      = True
 # Run on the test data, or start the simulator in manual mode 
 # (manual mode will allow you to generate environments and type in your own commands)
-RUN_ON_TEST_DATA    = False
+RUN_ON_TEST_DATA    = True
 # How many of the 100 test-data do you want to test?
 NUM_TESTED_DATA     = 100
 # Where to find the normailization?
@@ -471,7 +471,7 @@ class Simulator(object):
         successfull         = 0
         val_data            = {}
         for fid, fn in enumerate(files):
-            if fid == 17:
+            if (fid in [94, 96]):
                 print("Phase 2 Run {}/{}".format(fid, len(files)))
                 eval_data = {}
                 fpath     = fn + "2.json"
@@ -504,7 +504,7 @@ class Simulator(object):
                 #print(f'data: {data}')
                 #print(f'target position: {self._getTargetPosition(data)}')
                 print(f'voice: {data["voice"]}')
-                while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5)  and cnt < 300:
+                while phase < th and cnt < int(gt_trajectory.shape[0] * 1.5):
                     state = self._getRobotState() if feedback else gt_trajectory[-1 if cnt >= gt_trajectory.shape[0] else cnt,:]
                     cnt += 1
                     tf_trajectory, phase, pred_loss, diff = self.predictTrajectory(data["voice"], self._getRobotState(), cnt, predict_loss=True)
@@ -517,7 +517,7 @@ class Simulator(object):
                     if dropped == 1 and "locations" not in eval_data.keys():
                         eval_data["locations"] = self._getTargetPosition(data)
                     self.pyrep.step()
-
+                print(f'diff is {diff}')
                 presult                 = self._evalPouring()
                 eval_percentage         = np.sum(presult) / float(len(presult))
                 eval_data["ball_array"] = presult
@@ -655,8 +655,9 @@ class Simulator(object):
         elif self.rm_voice != "" and  d_in == "":
             self.cnt += 1
             tf_trajectory, phase, diff = self.predictTrajectory(self.rm_voice, self._getRobotState(), self.cnt)
-            if diff >=0.1:
-                self.node.get_logger().info('Task not understood. Skipping execution.')
+            if diff >=0.02:
+                self.node.get_logger().info('Task not understood. Skipping execution. Diff was: ' + str(diff))
+
                 self._stopRobotMovement()
                 self.rm_voice = ""
                 return True
@@ -669,8 +670,10 @@ class Simulator(object):
             if phase >=0.98:
             #if self.cnt >= 250 :
                 self.node.get_logger().info("Finished running trajectory with " + str(self.cnt) + " steps")
+                self.node.get_logger().info("diff is: " + str(diff))
                 self._stopRobotMovement()
                 self.rm_voice = ""
+
 
         return True
     

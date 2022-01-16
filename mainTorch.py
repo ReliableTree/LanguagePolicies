@@ -18,20 +18,20 @@ import pickle
 
 
 # Learning rate for the adam optimizer
-LEARNING_RATE   = 0.0001
+LEARNING_RATE   = 1e-4
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
 WEIGHT_W        = 50.0
 # Weight for the trajectroy generation loss
-WEIGHT_TRJ      = 50#5.0
+WEIGHT_TRJ      = 1#5.0
 
-WEIGHT_GEN_TRJ  = 50
+WEIGHT_GEN_TRJ  = 1
 
 # Weight for the time progression loss
 WEIGHT_DT       = 14.0
 # Weight for the phase prediction loss
-WEIGHT_PHS      = 50 #1.0
+WEIGHT_PHS      = 1 #1.0
 
 WEIGHT_FOD      = 0
 
@@ -63,20 +63,29 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], model_setup=model_setup).to(device)
     #print(path_dict['TRAIN_DATA_TORCH'])
     train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
-    train_indices = torch.randperm(int(len(train_data)))
-    train_indices = train_indices[:int(len(train_indices)*train_size)]
+    path_to_indices = os.path.join(path_dict['DATA_PATH'], "Data/Model/", logname)
+    if not os.path.exists(path_to_indices):
+        os.makedirs(path_to_indices)
+    if model_path is not None and False:
+        train_indices = torch.load(os.path.join(model_path, 'train_indices'), map_location='cuda:0')
+        print('used train indeces')
+    else:
+        train_indices = torch.randperm(int(len(train_data)))
+        train_indices = train_indices[:int(len(train_indices)*train_size)]
+        train_indices = train_indices[:1]
+        torch.save(train_indices, path_to_indices + '/train_indices')
     print(len(train_indices))
-    train_data = torch.utils. data.Subset(train_data, train_indices)
+    #train_data = torch.utils. data.Subset(train_data, train_indices)
     print(f'traindata len = {len(train_data)}')
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     eval_data = TorchDataset(path = path_dict['VAL_DATA_TORCH'], device=device)
     eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
     network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=WEIGHT_FOD, gamma_sl = 1, device=device, tboard=tboard)
-    network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
-
+    #network.setDatasets(train_loader=train_loader, val_loader=train_loader)
+    network.setDatasets_overfit(train_data)
     network.setup_model(model_params=model_setup)
     if model_path is not None:
-        model.load_state_dict(torch.load(model_path, map_location='cuda:0'))
+        model.load_state_dict(torch.load(model_path + 'policy_translation_h', map_location='cuda:0'))
     #init_weights(network)
     count_parameters(network)
 
@@ -107,7 +116,11 @@ if __name__ == '__main__':
             'obj_embedding': {'use_obj_embedding':True, 'train_embedding':True, 'EIS':30, 'EOS':10},
             'attn_trans' : {'use_attn_trans':True},
             'train'      : True,
-            'use_memory' : True,
+            'use_memory' : False,
+            'compression':  {
+                'use_compression' : True,
+                'arc'             : [200, 0]
+            },
             'lang_trans' :  {
                 'use_lang_trans' : True,
                 'd_output' : 30,
@@ -119,9 +132,9 @@ if __name__ == '__main__':
             'contr_trans': {
                 'use_contr_trans':True,
                 'd_output'   : 8,
-                'd_model'    : 210,
-                'nhead'      : 6,
-                'nlayers'    : 4,
+                'd_model'    : 40,
+                'nhead'      : 1,
+                'nlayers'    : 2,
                 'recursive'    : False,
                 'use_gen2'     : False,
                 'use_mask'     : False,
@@ -151,7 +164,7 @@ if __name__ == '__main__':
         }
         model_path = None
         if '-model' in args:
-            model_path = args[args.index('-model') + 1] + 'policy_translation_h'
+            model_path = args[args.index('-model') + 1]
             if '-model_setup' in args:
                 setup_path = args[args.index('-model') + 1] + 'model_setup.pkl'
                 with open(setup_path, 'rb') as f:
@@ -177,10 +190,11 @@ if __name__ == '__main__':
         if '-train_size' in args:
             train_size = float(args[args.index('-train_size') + 1])
 
+
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
         print(f'logname: {logname}')
         network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard, model_setup=model_setup, train_size=train_size)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
-        torch.save(network.state_dict(), path_dict['MODEL_PATH'])
+        #torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 

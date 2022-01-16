@@ -1,6 +1,9 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
+import imp
 import pickle
+from re import S
+from tkinter.messagebox import NO
 from numpy.core.fromnumeric import mean
 import tensorflow as tf
 import numpy as np
@@ -8,7 +11,6 @@ import pathlib
 
 from tensorflow.python.eager.context import device
 
-from model_src.attention import TopDownAttention
 from model_src.attentionTorch import TopDownAttentionTorch
 from model_src.glove import GloveEmbeddings
 from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
@@ -16,10 +18,10 @@ from model_src.controllerTransformer import ControllerTransformer
 from model_src.transformerAttention import TransformerAttention
 from model_src.planNetwork import Plan_NN
 from model_src.transformerUpConv import TransformerUpConv
+from model_src.compressionNet import CNet2
 
 from utils.Transformer import TransformerModel
 from utils.Transformer import generate_square_subsequent_mask
-from utils.torch_util import dmp_dt_torch
 
 import torch
 import torch.nn as nn
@@ -99,10 +101,16 @@ class PolicyTranslationModelTorch(nn.Module):
             self.prediction_nn = None
 
         self.memory = {}
+        self.diff_vec = None
+        self.compressionNet = None
+        self.compressionNetInpt = None
 
     def reset_memory(self):
         for name in self.memory:
             self.memory[name] = None
+
+    def converged(self):
+        self.compressionNet.make_feature()
 
     def load_memory(self, path, names):
         for name in names:
@@ -124,11 +132,22 @@ class PolicyTranslationModelTorch(nn.Module):
             pass   #reactivate if recurrent
         self.language = self.get_language(language_in)               #16 x 32
 
+        if 'compression' in self.model_setup and self.model_setup['compression']['use_compression']:
+            if self.compressionNet is None:
+                arc = [self.language.size(-1)] + self.model_setup['compression']['arc'] + [self.language.size(-1)]
+                self.compressionNet = CNet2(arc, device=self.language.device)
+                self.compressionNet.make_feature()                
+            self.language = self.compressionNet(self.language)  
         # Calculate attention and expand it to match the feature size
-        
+
         inpt_features, diff = self.get_inpt_features(features, gt_attention, robot)
         #inpt_features = inpt_features[:,:1,:].repeat([1, inpt_features.size(1), 1])
-
+        if 'compression' in self.model_setup and self.model_setup['compression']['use_compression']:
+            if self.compressionNetInpt is None:
+                arc = [inpt_features.size(-1)] + self.model_setup['compression']['arc'] + [inpt_features.size(-1)]
+                self.compressionNetInpt = CNet2(arc, device=self.language.device)
+                self.compressionNetInpt.make_feature()         
+            inpt_features = self.compressionNetInpt(inpt_features)  
         current_plan = self.get_plan(inpt_features) #350x16x8
 
         #if optimize:
@@ -143,6 +162,8 @@ class PolicyTranslationModelTorch(nn.Module):
         result['atn']     = self.obj_atn
         result['phs']     = current_plan[:,:,7]
         result['diff']    = diff
+        result['language']= self.language
+        result['inpt_features'] = inpt_features
 
         if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
             result['loss_prediction'] = predicted_loss_p
@@ -160,7 +181,16 @@ class PolicyTranslationModelTorch(nn.Module):
                 in_memory = self.memory[name][dist > 0.01]
         else:
             in_memory = self.memory[name]
-        diff = ((inpt.unsqueeze(0) - in_memory.unsqueeze(1))**2).sum(dim=-1)
+        if name == 'cfeatures':
+            diff = ((inpt[:,4:].unsqueeze(0) - in_memory[:,4:].unsqueeze(1))**2).sum(dim=-1)
+            '''if self.diff_vec is not None:
+                self.diff_vec = torch.cat((self.diff_vec, torch.min(diff).reshape(1)))
+            else:
+                self.diff_vec = torch.min(diff).reshape(1)'''
+            #print(f'not using spacial features')
+            #print(f'diff: {torch.min(diff)}')
+        else:
+            diff = ((inpt.unsqueeze(0) - in_memory.unsqueeze(1))**2).sum(dim=-1)
         best_match = torch.argmin(diff, dim=0)
         return in_memory[best_match], torch.min(diff)
 
@@ -227,8 +257,6 @@ class PolicyTranslationModelTorch(nn.Module):
             _, language  = self.lng_gru(language) 
         if 'bottleneck' in self.model_setup['lang_trans'] and self.model_setup['lang_trans']['bottleneck']:
             language = nn.Softmax(dim=-1)(language.squeeze())
-
-        language = language.squeeze()
         '''if self.model_setup['use_memory']:
             if self.model_setup['train']:
                 if self.mem is None:
@@ -239,7 +267,7 @@ class PolicyTranslationModelTorch(nn.Module):
                 print('load')
                 language = self.find_closest_match(language)'''
         
-        return language.squeeze() 
+        return language.reshape([language.shape[0], -1])
 
     def get_max_features(self, features, gt_attention = None):
         if self.model_setup['obj_embedding']['use_obj_embedding']:
@@ -352,3 +380,7 @@ class PolicyTranslationModelTorch(nn.Module):
             pickle.dump(self.model_setup, f)  
         for name in self.memory:
             torch.save(self.memory[name], path_to_file + name)
+        if self.diff_vec is not None:
+            torch.save(self.diff_vec, path_to_file + 'diff_vec')
+            print(f'max diff in training: {torch.min(self.diff_vec)}')
+            print(f'std diff: {torch.std(self.diff_vec)}')

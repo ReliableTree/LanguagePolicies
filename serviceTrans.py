@@ -5,6 +5,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import sys
+from tkinter.messagebox import NO
 
 from torch._C import dtype
 import rclpy
@@ -23,6 +24,7 @@ import pickle
 import torch
 import torch.nn as nn
 import time
+import os
 # Force TensorFlow to use the CPU
 FORCE_CPU    = True
 # Use dropout at run-time for stochastif-forward passes
@@ -61,9 +63,11 @@ TRAIN_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDatase
 
 VAL_DATA_TORCH = '/home/hendrik/Documents/master_project/LokalData/TorchDataset/val_data_torch.txt'
 
-MODEL_PATH   = '/home/hendrik/Documents/master_project/LokalData/Model/NxmJWy8Egzz/best_val/policy_translation_h'
-MODEL_SETUP  = '/home/hendrik/Documents/master_project/LokalData/Model/NxmJWy8Egzz/best_val/model_setup.pkl'
-MEMORY_PATH  = '/home/hendrik/Documents/master_project/LokalData/Model/NxmJWy8Egzz/best_val/'
+cp = '/home/hendrik/Documents/master_project/LokalData/Model/NxmJWy8Egzz/best_val/'
+
+MODEL_PATH   = cp + 'policy_translation_h'
+MODEL_SETUP  = cp + 'model_setup.pkl'
+MEMORY_PATH  = cp
 
 
 from torch.utils.data import DataLoader
@@ -97,6 +101,7 @@ def setup_model(device = 'cpu', batch_size = 32):
     network.setup_model(model_params=model_setup)
     model.load_state_dict(torch.load(MODEL_PATH, map_location='cuda:0'))
 
+
     return model
 
 class NetworkService():
@@ -116,6 +121,16 @@ class NetworkService():
             self.model_setup = pickle.load(f)
             self.model_setup['train'] = True
         self.trj_gen = None
+        self.path_feat = '/home/hendrik/Documents/master_project/LokalData/presi/features'
+        self.path_lang = '/home/hendrik/Documents/master_project/LokalData/presi/lang'
+        if os.path.isfile(self.path_feat):
+            self.save_features = torch.load(self.path_feat)
+            self.save_lang = torch.load(self.path_lang)
+            print('loaded features')
+        else:
+            self.save_features = None
+            self.save_lang = None
+            print('didnt load features')
         print("Ready")
 
     def runNode(self):
@@ -252,19 +267,34 @@ class NetworkService():
             else:
                 self.model.eval()
             with torch.no_grad():
-                self.model.train()
                 result = self.model(self.input_data)
                 generated = result['gen_trj']
                 self.atn = result['atn']
                 phase = result['phs']
                 self.diff = result['diff']
                 if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
-                    pred_loss = result['loss_prediction']
+                    self.pred_loss = result['loss_prediction']
+                else:
+                    self.pred_loss = torch.zeros(1)
+            save_lang = result['language'][0].unsqueeze(0)
+            save_features = result['inpt_features'][0,0].unsqueeze(0)
+            if self.save_lang is not None:
+                self.save_lang = torch.cat((self.save_lang, save_lang), dim = 0)
+                self.save_features = torch.cat((self.save_features, save_features), dim = 0)
+            else:
+                self.save_lang = save_lang
+                self.save_features = save_features
+            
+            
+            torch.save(self.save_lang, self.path_lang)
+            torch.save(self.save_features, self.path_feat)
+            print(f'lang dim = {self.save_lang.shape}')
+            print(f'features dim = {self.save_features.shape}')
 
             #print(f'time for one call: {time.perf_counter() - h}')
             #print(f'atn : {atn}')
             self.trj_gen    = generated.mean(axis=0)
-            self.trj_gen    = self.median_fiter(self.trj_gen, 3)
+            self.trj_gen    = self.median_fiter(self.trj_gen, 20)
             self.trj_gen = self.trj_gen.cpu().numpy() #350
             #print(f'trj_gen: {self.trj_gen.shape}')
 
@@ -272,7 +302,7 @@ class NetworkService():
             self.phase_value     = self.median_fiter(self.phase_value, 3)
             self.phase_value     = self.phase_value.cpu().numpy()
 
-            self.pred_loss = pred_loss
+            
 
             
         #print(f'phase: {phase_value}')

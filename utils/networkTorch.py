@@ -17,6 +17,8 @@ import torch.nn as nn
 import time
 import copy
 
+from torch.utils.data import DataLoader
+
 class NetworkTorch(nn.Module):
     def __init__(self, model, data_path, logname, lr, lw_atn, lw_w, lw_trj, lw_gen_trj, lw_dt, lw_phs, lw_fod, log_freq=25, gamma_sl = 0.995, device = 'cuda', use_transformer = True, tboard=True):
         super().__init__()
@@ -57,6 +59,8 @@ class NetworkTorch(nn.Module):
         self.ce_loss = nn.CrossEntropyLoss()
         self.gamma_sl = gamma_sl
 
+        self.compression_dim = torch.ones(1).mean()
+
     def setup_model(self, model_params):
         with torch.no_grad():
             for step, (d_in, d_out) in enumerate(self.train_ds):
@@ -67,8 +71,28 @@ class NetworkTorch(nn.Module):
         self.train_ds = train_loader
         self.val_ds   = val_loader
 
+    def setDatasets_overfit(self, train_data):
+        self.num_examples = torch.scalar_tensor(1, device=self.device)
+        self.train_data = train_data 
+        self.train_indices = torch.randperm(int(len(train_data)))
+        train_indices = self.train_indices[:int(self.num_examples)]
+        train_data = torch.utils. data.Subset(train_data, train_indices)
+        train_loader = DataLoader(train_data, batch_size=1, shuffle=True)
+        self.train_ds = train_loader
+        self.val_ds   = train_loader
+
+    def add_data(self):
+        self.num_examples += 1
+        train_indices = self.train_indices[:int(self.num_examples)]
+        train_data = torch.utils. data.Subset(self.train_data, train_indices)
+        train_loader = DataLoader(train_data, batch_size=min(16, len(train_data)), shuffle=True)
+        self.train_ds = train_loader
+        self.val_ds   = train_loader
+
     def train(self, epochs, model_params):
         self.global_step = 0
+        train_loss_history = []
+        steps_since_last_converge = 0
         for epoch in range(epochs):
             self.model.reset_memory()
             rel_epoch = epoch/epochs
@@ -79,7 +103,7 @@ class NetworkTorch(nn.Module):
             #print(f'train embedding: {model_params["obj_embedding"]["train_embedding"]}')
             self.model.model_setup['train'] = True
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                if (step+1) % 400 == 0:
+                if (epoch+1) % 200 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)   
                     self.model.model_setup['train'] = True                 
                 train_loss.append(self.step(d_in, d_out, train=True, model_params=model_params))
@@ -88,13 +112,25 @@ class NetworkTorch(nn.Module):
                 if epoch == 0:
                     self.total_steps += 1
                 self.global_step += 1
-                if step > 3:
-                    pass#break
+                #if step > 3:
+                #    pass#break
+            steps_since_last_converge += 1
+            #if len(train_loss_history) > 0 and (np.mean(train_loss_history[-1] - train_loss)) < 0.003 and steps_since_last_converge > 20:
+            if steps_since_last_converge > 150 and 'compression' in self.model.model_setup and self.model.model_setup['compression']['use_compression'] and False:
+                self.model.converged()
+                self.compression_dim += 1
+                steps_since_last_converge = 0
+                print(f'new converge detected')
+            if (epoch+1)%1500 == 0:
+                self.add_data()
+                print(f'new data size: {len(self.train_ds)}')
+
+            train_loss_history.append(np.mean(train_loss))
             self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
             
             if (epoch + 1) % model_params['val_every'] == 0:
                 print(f'logname: {self.logname}')
-                self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params)
+                #self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params)
             self.scheduler.step()
             print(f'learning rate: {self.scheduler.get_last_lr()[0]}')
 
@@ -200,15 +236,17 @@ class NetworkTorch(nn.Module):
             result = self.model(d_in, gt_attention = attention)
         
         loss, debug_dict = self.calculateLoss(d_out, result, model_params)
+        debug_dict['compression_dim'] = self.compression_dim
+        debug_dict['train examples'] = self.num_examples
         #loss, (atn, trj, dt, phs, wght, rel_obj) = self.calculateLoss(d_out, result, train)
 
 
         if train:
             if not self.optimizer:
-                self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
+                self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=0) 
                 #self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999)) 
                 #self.optimizer = torch.optim.SGD(params=self.model.parameters(), lr=self.lr, weight_decay=1e-2) 
-                self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 1.0, gamma=self.gamma_sl)
+                self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[50,100,150,200, 400, 800], gamma=self.gamma_sl)
             #print(f'num parametrs in model: {len(list(self.model.parameters()))}')
 
             self.optimizer.zero_grad()
@@ -277,22 +315,21 @@ class NetworkTorch(nn.Module):
         #fod_loss = gen_trj
         #weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
         weight_dim  = torch.tensor([1.0, 1.0, 1.0, 1.0, 1, 1.0, 1.], device = generated.device)
-
+        min_arc = gen_trj.min(dim=1)[0].min(dim=0)[0]
+        max_arc = gen_trj.max(dim=1)[0].max(dim=0)[0]
+        weight_dim = 1/((max_arc - min_arc)+0.1)
         atn_loss = self.catCrossEntrLoss(attention, atn)
 
         fod_loss = nn.MSELoss()(gen_trj[:,1:], gen_trj[:, :-1])
         rel_correct_objects = (torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()/len(atn)
-        if not self.use_transformer:
-            dt_loss = self.mse_loss(delta_t, dmp_dt[:,0]).mean()
-            #TODO why :-1?'''
-            weight_loss = nn.MSELoss(reduction='none')(wght[:,:-1,:,:], wght[:,:-1,:,:].roll(shifts = -1, dims = 1)).mean((-2,-1))
-            weight_loss = (weight_loss * loss_atn[:,:-1]).mean()
 
         repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
         #phs_loss = self.calculateMSEWithPaddingMask(phase, phs.squeeze(), loss_atn).mean()
         phs_loss = ((phase-phs.squeeze())**2).mean()
         #trj_loss = ((generated- gen_trj)**2).mean()
         #trj_loss = trj_loss.mean()
+
+
         trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim).mean(-1) #16?
         if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
             llp = ((trj_loss - loss_prediction)**2).mean()

@@ -33,7 +33,7 @@ class TransformerAttention(nn.Module):
         if self.seq_embedding is None:
             self.seq_embedding = nn.Linear(attn.size(-1), 1).to(self.device)
         attn = self.seq_embedding(attn)
-        attn = attn.squeeze().transpose(0,1)                  #16x6
+        attn = attn.reshape([attn.shape[0], -1]).transpose(0,1)                  #16x6
         #print(f'attn size end tras: {attn.shape}')
         attn = nn.Softmax(dim = -1)(attn)
         #print(f'attn size end tras: {attn.shape}')
