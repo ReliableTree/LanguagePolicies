@@ -29,3 +29,5 @@ ros2/
 gen_trajectory.npy
 history.npy
 trajectories.npy
+val_result.json
+val_result.json
