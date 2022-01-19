@@ -1,9 +1,9 @@
-tensorflow==2.1.0
+tensorflow==2.7
 matplotlib
 hashids
 opencv-python==4.2.0.34
 sklearn
 tensorflow-probability==0.9.0
 pycurl
-cffi==1.11.5
+cffi
 prettytable

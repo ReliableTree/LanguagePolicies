@@ -6,11 +6,8 @@ from pickle import NONE
 import tensorflow as tf
 import sys
 import numpy as np
-from torch._C import dtype
 from torch.serialization import save
-import model_src
 from utils.graphsTorch import TBoardGraphsTorch
-import tensorflow as tf
 
 import torch
 import torch.nn as nn
