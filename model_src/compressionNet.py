@@ -34,11 +34,9 @@ class CNet2(nn.Module):
         
     def forward(self, inpt):
         inter_res = self.down_net(inpt)
-        '''with torch.no_grad():
-            between = inter_res
-            between[between>0.5] = 1
-            between[between<=0.5] = 0
-            inter_res = inter_res - inter_res + between
-        print(f'inter_res: {inter_res}')'''
         result = self.up_net(inter_res)
         return result
+
+    def unfreeze(self):
+        for param in self.parameters():
+            param.requires_grad = True

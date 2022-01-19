@@ -109,8 +109,19 @@ class PolicyTranslationModelTorch(nn.Module):
         for name in self.memory:
             self.memory[name] = None
 
+    def freeze(self):
+        for param in self.parameters():
+            param.requires_grad = False
+        self.compressionNet.unfreeze()
+        self.compressionNetInpt.unfreeze()
+    
+    def unfreeze(self):
+        for param in self.parameters():
+            param.requires_grad = True
+
     def converged(self):
         self.compressionNet.make_feature()
+        self.compressionNetInpt.make_feature()
 
     def load_memory(self, path, names):
         for name in names:

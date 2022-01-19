@@ -79,13 +79,13 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     print(f'traindata len = {len(train_data)}')
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     eval_data = TorchDataset(path = path_dict['VAL_DATA_TORCH'], device=device)
-    eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
+    eval_loader = DataLoader(eval_data, batch_size=100, shuffle=True)
     network = NetworkTorch(model, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=WEIGHT_FOD, gamma_sl = 1, device=device, tboard=tboard)
-    #network.setDatasets(train_loader=train_loader, val_loader=train_loader)
+    network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
     network.setDatasets_overfit(train_data)
     network.setup_model(model_params=model_setup)
     if model_path is not None:
-        model.load_state_dict(torch.load(model_path + 'policy_translation_h', map_location='cuda:0'))
+        model.load_state_dict(torch.load(model_path + 'policy_translation_h', map_location='cuda:0'), strict=False)
     #init_weights(network)
     count_parameters(network)
 
@@ -160,7 +160,7 @@ if __name__ == '__main__':
                 'use_LSTM' : False
             },
             'quick_val':False,
-            'val_every' : 1
+            'val_every' : 1000
         }
         model_path = None
         if '-model' in args:

@@ -2,7 +2,7 @@
 
 from pickle import NONE
 import matplotlib
-#matplotlib.use("TkAgg")
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
@@ -25,6 +25,7 @@ class TBoardGraphsTorch():
             self.__tboard_train      = tf.summary.create_file_writer(self.logdir + "train/")
             self.__tboard_validation = tf.summary.create_file_writer(self.logdir + "validate/")
             self.voice               = Voice(path=data_path)
+        self.fig, self.ax = plt.subplots(3,3)
 
     def startDebugger(self):
         tf.summary.trace_on(graph=True, profiler=True)
@@ -221,8 +222,9 @@ class TBoardGraphsTorch():
             tf_p_dt        = tf_p_dt.numpy()
         trj_len      = tf_y_true.shape[0]
         
-        fig, ax = plt.subplots(3,3)
-        fig.set_size_inches(9, 9)
+        #fig, ax = plt.subplots(3,3)
+        fig, ax = self.fig, self.ax
+        #fig.set_size_inches(9, 9)
         for sp in range(7):
             idx = sp // 3
             idy = sp  % 3
@@ -237,6 +239,7 @@ class TBoardGraphsTorch():
                 ax[idx,idy].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
         
         if tf_phase is not None:
+            ax[2,2].clear()
             ax[2,2].plot(range(tf_y_pred.shape[0]), tf_phase, color='orange')
         if p_dt is not None:
             ax[2,2].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
@@ -248,7 +251,8 @@ class TBoardGraphsTorch():
             if not os.path.exists(path):
                 os.makedirs(path)
             plt.savefig(path + name_plot + '.png')
-        plt.close()
+        #fig.clear()
+        #plt.close()
         if not save:
             with self.__tboard_validation.as_default():
                 tf.summary.image(name, data=result, step=stepid)

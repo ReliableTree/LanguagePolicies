@@ -61,6 +61,8 @@ class NetworkTorch(nn.Module):
 
         self.compression_dim = torch.ones(1).mean()
 
+        self.converge_history = []
+
     def setup_model(self, model_params):
         with torch.no_grad():
             for step, (d_in, d_out) in enumerate(self.train_ds):
@@ -79,20 +81,19 @@ class NetworkTorch(nn.Module):
         train_data = torch.utils. data.Subset(train_data, train_indices)
         train_loader = DataLoader(train_data, batch_size=1, shuffle=True)
         self.train_ds = train_loader
-        self.val_ds   = train_loader
 
     def add_data(self):
         self.num_examples += 1
         train_indices = self.train_indices[:int(self.num_examples)]
-        train_data = torch.utils. data.Subset(self.train_data, train_indices)
+        train_data = torch.utils.data.Subset(self.train_data, train_indices)
         train_loader = DataLoader(train_data, batch_size=min(16, len(train_data)), shuffle=True)
         self.train_ds = train_loader
-        self.val_ds   = train_loader
 
     def train(self, epochs, model_params):
         self.global_step = 0
-        train_loss_history = []
-        steps_since_last_converge = 0
+        train_loss_min = float('inf')
+        self.train_compression = False
+        all_step = 0
         for epoch in range(epochs):
             self.model.reset_memory()
             rel_epoch = epoch/epochs
@@ -103,9 +104,11 @@ class NetworkTorch(nn.Module):
             #print(f'train embedding: {model_params["obj_embedding"]["train_embedding"]}')
             self.model.model_setup['train'] = True
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                if (epoch+1) % 200 == 0:
+                all_step+=1
+                if (all_step+1)%400==0:
                     validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)   
-                    self.model.model_setup['train'] = True                 
+                    self.model.model_setup['train'] = True   
+                    all_step = 0              
                 train_loss.append(self.step(d_in, d_out, train=True, model_params=model_params))
                 
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
@@ -114,30 +117,50 @@ class NetworkTorch(nn.Module):
                 self.global_step += 1
                 #if step > 3:
                 #    pass#break
-            steps_since_last_converge += 1
             #if len(train_loss_history) > 0 and (np.mean(train_loss_history[-1] - train_loss)) < 0.003 and steps_since_last_converge > 20:
-            if steps_since_last_converge > 150 and 'compression' in self.model.model_setup and self.model.model_setup['compression']['use_compression'] and False:
-                self.model.converged()
-                self.compression_dim += 1
-                steps_since_last_converge = 0
-                print(f'new converge detected')
-            if (epoch+1)%1500 == 0:
-                self.add_data()
-                print(f'new data size: {len(self.train_ds)}')
+            mean_loss_eps = np.mean(train_loss)
+            conv = self.is_converged(mean_loss_eps)
+            #self.model.freeze()
+            if conv:
+                if self.train_compression:
+                    self.model.unfreeze()
+                    self.train_compression = False
+                    self.lw_trj /= 20
+                else:
+                    if mean_loss_eps > 5*train_loss_min:
+                        self.model.converged()
+                        self.compression_dim += 1
+                        train_loss_min = mean_loss_eps
+                        self.train_compression = True
+                        self.model.freeze()
+                        self.lw_trj *= 20
+                    else:
+                        self.add_data()
 
-            train_loss_history.append(np.mean(train_loss))
+            if mean_loss_eps < train_loss_min:
+                train_loss_min = mean_loss_eps
             self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
             
-            if (epoch + 1) % model_params['val_every'] == 0:
+            if (epoch +1) % model_params['val_every'] == 0:
                 print(f'logname: {self.logname}')
-                #self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params)
+                self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params)
             self.scheduler.step()
             print(f'learning rate: {self.scheduler.get_last_lr()[0]}')
 
             if self.use_tboard:
                 self.model.saveModelToFile(add = self.logname + "/", data_path = self.data_path)
     
-    
+    def is_converged(self, inpt):
+        self.converge_history.append(inpt)
+        self.converge_history = self.converge_history[-1000:]
+        if len(self.converge_history) >= 1000:
+            if min(self.converge_history[-1000:])*0.95 < min(self.converge_history[-100:]):
+                self.converge_history = []
+                return True
+        return False
+
+
+
     def torch2tf(self, inpt):
         if inpt is not None:
             return tf.convert_to_tensor(inpt.detach().cpu().numpy())
@@ -153,20 +176,24 @@ class NetworkTorch(nn.Module):
         self.model.model_setup['train'] = False
         #with torch.no_grad():
         #self.optimizer.zero_grad()
+        ds = self.train_ds
+        print(f'len of eval: {len(ds)}')
         if (not quick) and (not model_params['quick_val']):
             print("Running full validation...")
+            ds = self.val_ds
+            print(f'len: {len(ds)}')
         val_loss = []
-        val_loss_opt = []
+        #val_loss_opt = []
         model_params['contr_trans']['recursive'] = False
-        for step, (d_in, d_out) in enumerate(self.val_ds):
-            loss = self.step(d_in, d_out, train=False, model_params=model_params)
+        for step, (d_in, d_out) in enumerate(ds):
+            loss = self.step(d_in, d_out, train=False, model_params=model_params, quick=quick)
             #loss = self.step(d_in, d_out, train=False, recursive = True)
             val_loss.append(loss)
             
             
-            loss_opt = self.step(d_in, d_out, train=False, model_params=model_params, optimize=True)
+            #loss_opt = self.step(d_in, d_out, train=False, model_params=model_params, optimize=True)
             #loss = self.step(d_in, d_out, train=False, recursive = True)
-            val_loss_opt.append(loss_opt)
+            #val_loss_opt.append(loss_opt)
             
             if quick or model_params['quick_val']:
                 break
@@ -179,27 +206,12 @@ class NetworkTorch(nn.Module):
             in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
             in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
             d_in_graphs  = (in0, in1, in2)
-            model_params['contr_trans']['recursive'] = False
             out_model = self.model(d_in_graphs)
             self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
                             (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
                             out_model,
                             save=save,
                             name_plot = str(step),
-                            epoch=epoch,
-                            model_params=model_params)
-
-            in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
-            in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
-            in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
-            d_in_graphs  = (in0, in1, in2)
-
-            out_model = self.model(d_in_graphs, optimize=True)
-            self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
-                            (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                            out_model,
-                            save=save,
-                            name_plot = 'optimized_' + str(step),
                             epoch=epoch,
                             model_params=model_params)
 
@@ -212,10 +224,10 @@ class NetworkTorch(nn.Module):
         #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
 
         loss = np.mean(val_loss)
-        loss_opt = np.mean(val_loss_opt)
+        #loss_opt = np.mean(val_loss_opt)
         if pnt:
             print("  Validation Loss: {:.6f}".format(loss))
-            print("  Validation Loss optimized: {:.6f}".format(loss_opt))
+            #print("  Validation Loss optimized: {:.6f}".format(loss_opt))
         if not quick:
             if loss < self.global_best_loss_val:
                 self.global_best_loss_val = loss
@@ -224,7 +236,7 @@ class NetworkTorch(nn.Module):
                 print(f'best val model saved with: {loss}')
         return np.mean(val_loss)
 
-    def step(self, d_in, d_out, train, model_params, optimize = False):
+    def step(self, d_in, d_out, train, model_params, quick=True, optimize = False):
         generated, attention, delta_t, weights, phase, loss_atn = d_out
         if 'use_dropout' in model_params and model_params['use_dropout']:
             self.model.train()
@@ -238,8 +250,7 @@ class NetworkTorch(nn.Module):
         loss, debug_dict = self.calculateLoss(d_out, result, model_params)
         debug_dict['compression_dim'] = self.compression_dim
         debug_dict['train examples'] = self.num_examples
-        #loss, (atn, trj, dt, phs, wght, rel_obj) = self.calculateLoss(d_out, result, train)
-
+        debug_dict['train compression'] = torch.tensor(self.train_compression, dtype=torch.int16)
 
         if train:
             if not self.optimizer:
@@ -265,7 +276,7 @@ class NetworkTorch(nn.Module):
         else:
             self.model.eval()
             if self.last_written_step != self.global_step:
-                if self.use_tboard:
+                if self.use_tboard and not quick:
                     self.last_written_step = self.global_step
                     self.tboard.addValidationScalar("Loss", loss, self.global_step)
                     for para, value in debug_dict.items():
@@ -405,11 +416,13 @@ class NetworkTorch(nn.Module):
 
 
 
-        self.tboard.plotClassAccuracy(attention, self.tf2torch(tf.math.reduce_mean(self.torch2tf(atn), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(atn), axis=0)), self.tf2torch(self.torch2tf(language)), stepid=self.global_step)
+        #self.tboard.plotClassAccuracy(attention, self.tf2torch(tf.math.reduce_mean(self.torch2tf(atn), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(atn), axis=0)), self.tf2torch(self.torch2tf(language)), stepid=self.global_step)
         if not model_params['contr_trans']['use_contr_trans']:
             self.tboard.plotDMPTrajectory(target_trj, self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(gen_trj), axis=0)),
                                         self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0)), delta_t, self.tf2torch(tf.math.reduce_mean(self.torch2tf(dmp_dt), axis=0)), stepid=self.global_step)
         else:
+            pass
+
             path_to_plots = self.data_path + "/plots/"+ str(self.logname) + '/' + str(epoch) + '/'
             gen_tr_trj= self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0))
             gen_tr_phase = self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0))
