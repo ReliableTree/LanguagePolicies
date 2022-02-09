@@ -1,6 +1,7 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
 from __future__ import absolute_import, division, print_function, unicode_literals
+from ast import If
 from os import name, path
 from pickle import NONE
 import tensorflow as tf
@@ -135,34 +136,23 @@ class NetworkTorch(nn.Module):
         if self.use_tboard:
             do_dim = d_in[0].size(0)
             self.model.eval()
-                            
-            in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
-            in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
-            in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
-            d_in_graphs  = (in0, in1, in2)
-            model_params['contr_trans']['recursive'] = False
-            out_model = self.model(d_in_graphs)
-            self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
-                            (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                            out_model,
-                            save=save,
-                            name_plot = str(step),
-                            epoch=epoch,
-                            model_params=model_params)
-
-            in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
-            in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
-            in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
-            d_in_graphs  = (in0, in1, in2)
-
-            out_model = self.model(d_in_graphs, optimize=True)
-            self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
-                            (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                            out_model,
-                            save=save,
-                            name_plot = 'optimized_' + str(step),
-                            epoch=epoch,
-                            model_params=model_params)
+            if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
+                out_model = self.model(d_in[:1])
+                self.createGraphsMW(1, (d_out[0][0], d_out[1][0]), out_model)
+            else:
+                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
+                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
+                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
+                d_in_graphs  = (in0, in1, in2)
+                model_params['contr_trans']['recursive'] = False
+                out_model = self.model(d_in_graphs)
+                self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
+                                (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
+                                out_model,
+                                save=save,
+                                name_plot = str(step),
+                                epoch=epoch,
+                                model_params=model_params)
 
             self.model.train()
 
@@ -186,19 +176,21 @@ class NetworkTorch(nn.Module):
         return np.mean(val_loss)
 
     def step(self, d_in, d_out, train, model_params, optimize = False):
-        generated, attention, delta_t, weights, phase, loss_atn = d_out
-        if 'use_dropout' in model_params and model_params['use_dropout']:
-            self.model.train()
+        if not ('meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']):
+            generated, attention, delta_t, weights, phase, loss_atn = d_out
+            if 'use_dropout' in model_params and model_params['use_dropout']:
+                self.model.train()
+            else:
+                self.model.eval()
+            if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
+                result = self.model(d_in, gt_attention = attention, gt_tjkt=generated, optimize=optimize)
+            else:
+                result = self.model(d_in, gt_attention = attention)
         else:
-            self.model.eval()
-        if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-            result = self.model(d_in, gt_attention = attention, gt_tjkt=generated, optimize=optimize)
-        else:
-            result = self.model(d_in, gt_attention = attention)
+            result = self.model(d_in)
         
         loss, debug_dict = self.calculateLoss(d_out, result, model_params)
         #loss, (atn, trj, dt, phs, wght, rel_obj) = self.calculateLoss(d_out, result, train)
-
 
         if train:
             if not self.optimizer:
@@ -260,42 +252,41 @@ class NetworkTorch(nn.Module):
         y_labels_args = torch.argmax(y_labels, dim = -1)
         return nn.NLLLoss()(torch.log(y_pred), y_labels_args)
 
+    def calcMSE(self, a, b):
+        return ((a.squeeze() - b.squeeze())**2).mean()
+
     def calculateLoss(self, d_out, result, model_params):
-        generated, attention, delta_t, weights, phase, loss_atn = d_out
+        if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
+            generated, phase = d_out
+        else:
+            generated, attention, delta_t, weights, phase, loss_atn = d_out
+            atn = result['atn']
+            atn_loss = self.catCrossEntrLoss(attention, atn)
+            rel_correct_objects = (torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()/len(atn)
+
+
         gen_trj = result['gen_trj']
-        atn = result['atn']
         phs = result['phs']
         if model_params['contr_trans']['use_gen2']:
             gen_gen_trj = result['gen_gen_trj']
-        elif 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
+        if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
             loss_prediction = result['loss_prediction']
             loss_gt = result['loss_gt']
 
-        #fod_loss = gen_trj
-        #weight_dim  = torch.tensor([3.0, 3.0, 3.0, 1.0, 0.5, 1.0, 0.1], device = generated.device)
         weight_dim  = torch.tensor([1.0, 1.0, 1.0, 1.0, 1, 1.0, 1.], device = generated.device)
 
-        atn_loss = self.catCrossEntrLoss(attention, atn)
 
-        fod_loss = nn.MSELoss()(gen_trj[:,1:], gen_trj[:, :-1])
-        rel_correct_objects = (torch.argmax(atn, dim=-1) == torch.argmax(attention, dim=-1)).sum()/len(atn)
-        if not self.use_transformer:
-            dt_loss = self.mse_loss(delta_t, dmp_dt[:,0]).mean()
-            #TODO why :-1?'''
-            weight_loss = nn.MSELoss(reduction='none')(wght[:,:-1,:,:], wght[:,:-1,:,:].roll(shifts = -1, dims = 1)).mean((-2,-1))
-            weight_loss = (weight_loss * loss_atn[:,:-1]).mean()
+        #fod_loss = nn.MSELoss()(gen_trj[:,1:], gen_trj[:, :-1])
 
-        repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
+        #repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
         #phs_loss = self.calculateMSEWithPaddingMask(phase, phs.squeeze(), loss_atn).mean()
-        phs_loss = ((phase-phs.squeeze())**2).mean()
-        #trj_loss = ((generated- gen_trj)**2).mean()
-        #trj_loss = trj_loss.mean()
-        trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim).mean(-1) #16?
+        phs_loss = self.calcMSE(phase, phs)
+        trj_loss = self.calcMSE(generated, gen_trj)
+        #trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim).mean(-1) #16?
         if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
             llp = ((trj_loss - loss_prediction)**2).mean()
-
             llg = ((0-loss_gt)**2).mean()
-        trj_loss = (trj_loss).mean()
+        #trj_loss = (trj_loss).mean()
 
         if model_params['contr_trans']['use_gen2']:
             trj_gen_loss = self.calculateMSEWithPaddingMask(generated, gen_gen_trj, repeated_weight_dim)
@@ -303,24 +294,29 @@ class NetworkTorch(nn.Module):
             trj_gen_loss = (trj_gen_loss).mean()
 
         if self.use_transformer:
-            loss = atn_loss * self.lw_atn + \
-                    trj_loss * self.lw_trj + \
-                    phs_loss * self.lw_phs + \
-                    self.lw_fod * fod_loss
             debug_dict = {
-                'atn_loss':atn_loss,
                 'trj_loss':trj_loss,
-                'fod_loss':fod_loss,
                 'phs_loss':phs_loss,
-                'rel_correct_objects':rel_correct_objects}
-            if model_params['contr_trans']['use_gen2']:
-                loss += trj_gen_loss * self.lw_gen_trj
-                debug_dict['trj_gen_loss':trj_gen_loss]
-            if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-                loss += llp * self.lw_trj
-                loss += llg * self.lw_trj
-                debug_dict['predicted_trajectory_loss']=llp
-                debug_dict['gt_trajectory_loss']=llg
+                }
+            if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
+                loss = trj_loss * self.lw_trj +\
+                    phs_loss * self.lw_phs
+            else:
+                loss = atn_loss * self.lw_atn + \
+                        trj_loss * self.lw_trj + \
+                        phs_loss * self.lw_phs
+                        #self.lw_fod * fod_loss
+                debug_dict = {
+                    'atn_loss':atn_loss,
+                    'rel_correct_objects':rel_correct_objects}
+                if model_params['contr_trans']['use_gen2']:
+                    loss += trj_gen_loss * self.lw_gen_trj
+                    debug_dict['trj_gen_loss':trj_gen_loss]
+                if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
+                    loss += llp * self.lw_trj
+                    loss += llg * self.lw_trj
+                    debug_dict['predicted_trajectory_loss']=llp
+                    debug_dict['gt_trajectory_loss']=llg
             return (loss, debug_dict)
 
         else:
@@ -380,5 +376,14 @@ class NetworkTorch(nn.Module):
                 self.tboard.plotDMPTrajectory(target_trj, gen_gen_trj, torch.zeros_like(gen_gen_trj),
                                         gen_tr_phase, delta_t, None, stepid=self.global_step, name='Gen - Trajectoy', save=save, name_plot='gengen_' + name_plot, path=path_to_plots)
 
-                
+    def createGraphsMW(self, d_in, d_out, result, save = False, name_plot = '', epoch = 0, model_params={}):
+        target_trj, target_phase  = d_out
+        gen_trj = result['gen_trj'][0]
+        phase   = result['phs'][0]
+        path_to_plots = self.data_path + "/plots/"+ str(self.logname) + '/' + str(epoch) + '/'
+        #gen_tr_trj= self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0))
+        #gen_tr_phase = self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0))
+        self.tboard.plotDMPTrajectory(target_trj, gen_trj, torch.zeros_like(gen_trj),
+                                    phase, target_phase, None, stepid=self.global_step, save=save, name_plot=name_plot, path=path_to_plots)
+        
 

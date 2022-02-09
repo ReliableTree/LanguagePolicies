@@ -45,7 +45,7 @@ contr_trans:                 d_output = self.model_setup['contr_trans']['d_outpu
 '''
 
 class PolicyTranslationModelTorch(nn.Module):
-    def __init__(self, od_path, glove_path, model_setup):
+    def __init__(self, od_path, glove_path = None, model_setup=None):
         super().__init__()
         self.model_setup         = model_setup
         self.units               = 32
@@ -113,40 +113,45 @@ class PolicyTranslationModelTorch(nn.Module):
 
 
     def forward(self, inputs, gt_attention = None, gt_tjkt=None, mean_over_do = False, optimize = False):
+        result = {}
+        ###
+        if 'meta_world' in self.model_setup and self.model_setup['meta_world']['use']:
+            inpt_features = inputs[:,:1].transpose(0,1)
+            seq_len = self.model_setup['meta_world']['seq_len']
+        else:
+            seq_len = 350
+            language_in   = inputs[0]
+            features   = inputs[1]                          #16x6x5 first entry is object class
+            robot      = inputs[2]                           #16x350x7
+            if self.model_setup['use_memory']:
+                self.use_memory(robot[:,0], 'start_position')
 
-        language_in   = inputs[0]
-        features   = inputs[1]                          #16x6x5 first entry is object class
-        robot      = inputs[2]                           #16x350x7
-        if self.model_setup['use_memory']:
-            self.use_memory(robot[:,0], 'start_position')
+            if (self.last_language is None) or (not torch.equal(language_in, self.last_language)):
+                pass   #reactivate if recurrent
+            self.language = self.get_language(language_in)               #16 x 32
 
-        if (self.last_language is None) or (not torch.equal(language_in, self.last_language)):
-            pass   #reactivate if recurrent
-        self.language = self.get_language(language_in)               #16 x 32
-
-        # Calculate attention and expand it to match the feature size
-        
-        inpt_features, diff = self.get_inpt_features(features, gt_attention, robot)
-        inpt_features = inpt_features[:,:1,:].repeat([1, inpt_features.size(1), 1])
-
-        current_plan = self.get_plan(inpt_features) #350x16x8
-
+            # Calculate attention and expand it to match the feature size
+            
+            inpt_features, diff = self.get_inpt_features(features, gt_attention, robot) #1x16x53
+            result['atn']     = self.obj_atn
+            result['diff']    = diff
+            #inpt_features = inpt_features[:,:1,:].repeat([1, inpt_features.size(1), 1])
+        #print(f'inpt featrue: {inpt_features.shape}')
+        current_plan = self.get_plan(inpt_features, seq_len) #350x16x8
         #if optimize:
         #    current_plan = self.optimize(current_plan, inpt_features)
 
-        if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
-            predicted_loss_p, predicted_loss_gt = self.pred_forward(inpt_features, current_plan, gt_tjkt, mean_over_do)
+        #if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
+        #    predicted_loss_p, predicted_loss_gt = self.pred_forward(inpt_features, current_plan, gt_tjkt, mean_over_do)
         
         current_plan = current_plan.transpose(0,1) #16x350x8
-        result = {}
-        result['gen_trj'] = current_plan[:,:,:7]
-        result['atn']     = self.obj_atn
-        result['phs']     = current_plan[:,:,7]
-        result['diff']    = diff
+        result['gen_trj'] = current_plan[:,:,:-1]
+        result['phs']     = current_plan[:,:,-1]
 
-        if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
-            result['loss_prediction'] = predicted_loss_p
-            result['loss_gt']         = predicted_loss_gt
+
+        #if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
+        #    result['loss_prediction'] = predicted_loss_p
+        #    result['loss_gt']         = predicted_loss_gt
         return result
 
 
@@ -290,7 +295,7 @@ class PolicyTranslationModelTorch(nn.Module):
             cfeatures, diff = self.use_memory(cfeatures, 'cfeatures', robot[:,0])
         return torch.cat((cfeatures, robot[:,0]), dim=-1).unsqueeze(0), diff  #1x16x46+7 = 1x16x53
 
-    def get_plan(self, inpt_features):
+    def get_plan(self, inpt_features, seq_len):
         if self.plan_nn is None:
             num_upconvs = self.model_setup['contr_trans']['plan_nn']['plan']['num_upconvs']
             stride= self.model_setup['contr_trans']['plan_nn']['plan']['stride']
@@ -299,7 +304,7 @@ class PolicyTranslationModelTorch(nn.Module):
             d_hid= self.model_setup['contr_trans']['plan_nn']['plan']['d_hid']
             nlayers= self.model_setup['contr_trans']['plan_nn']['plan']['nlayers']
             use_layernorm = self.model_setup['contr_trans']['plan_nn']['plan']['use_layernorm']
-            self.plan_nn = TransformerUpConv(num_upconvs=num_upconvs, stride=stride, ntoken=inpt_features.size(-1), d_output=d_output, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=350, use_layernorm=use_layernorm).to(inpt_features.device)
+            self.plan_nn = TransformerUpConv(num_upconvs=num_upconvs, stride=stride, ntoken=inpt_features.size(-1), d_output=d_output, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=seq_len, use_layernorm=use_layernorm).to(inpt_features.device)
         return self.plan_nn.forward(inpt_features) #350x16x8
     
     def pred_forward(self, inpt_features, current_plan, gt_tjkt=None, mean_over_do=False, freeze = False):

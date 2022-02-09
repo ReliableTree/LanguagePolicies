@@ -82,6 +82,7 @@ class TransformerUpConv(nn.Module):
             result = module(result)
         if (result.size(0) - self.seq_len) %2 ==0:
             cropping = int((result.size(0) - self.seq_len)/2)
+
             return result[cropping : -cropping]
         else:
             cropping = int((result.size(0) - self.seq_len - 1)/2)

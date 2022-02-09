@@ -212,6 +212,8 @@ class TBoardGraphsTorch():
             tf_dt = self.torch2tf(dt)
             tf_p_dt = self.torch2tf(p_dt)
 
+        print(f'tf_y_true: {tf_y_true.shape}')
+        print(f'tf_y_pred: {tf_y_pred.shape}')
         tf_y_true      = tf_y_true.numpy()
         tf_y_pred      = tf_y_pred.numpy()
         if tf_phase is not None:
@@ -225,7 +227,7 @@ class TBoardGraphsTorch():
         #fig, ax = plt.subplots(3,3)
         fig, ax = self.fig, self.ax
         #fig.set_size_inches(9, 9)
-        for sp in range(7):
+        for sp in range(len(tf_y_true[0])):
             idx = sp // 3
             idy = sp  % 3
             ax[idx,idy].clear()
@@ -233,7 +235,7 @@ class TBoardGraphsTorch():
             # GT Trajectory:
             ax[idx,idy].plot(range(trj_len), tf_y_true[:,sp],   alpha=1.0, color='forestgreen')            
             ax[idx,idy].plot(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], alpha=0.75, color='mediumslateblue')
-            ax[idx,idy].errorbar(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], xerr=None, yerr=None, alpha=0.25, fmt='none', color='mediumslateblue')
+            #ax[idx,idy].errorbar(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], xerr=None, yerr=None, alpha=0.25, fmt='none', color='mediumslateblue')
             #ax[idx,idy].set_ylim([-0.1, 1.1])
             if p_dt is not None:
                 ax[idx,idy].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
