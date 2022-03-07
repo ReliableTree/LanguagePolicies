@@ -293,47 +293,30 @@ class NetworkTorch(nn.Module):
             #trj_gen_loss = (trj_gen_loss * loss_atn).mean()
             trj_gen_loss = (trj_gen_loss).mean()
 
-        if self.use_transformer:
-            debug_dict = {
-                'trj_loss':trj_loss,
-                'phs_loss':phs_loss,
-                }
-            if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
-                loss = trj_loss * self.lw_trj +\
-                    phs_loss * self.lw_phs
-            else:
-                loss = atn_loss * self.lw_atn + \
-                        trj_loss * self.lw_trj + \
-                        phs_loss * self.lw_phs
-                        #self.lw_fod * fod_loss
-                debug_dict = {
-                    'atn_loss':atn_loss,
-                    'rel_correct_objects':rel_correct_objects}
-                if model_params['contr_trans']['use_gen2']:
-                    loss += trj_gen_loss * self.lw_gen_trj
-                    debug_dict['trj_gen_loss':trj_gen_loss]
-                if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-                    loss += llp * self.lw_trj
-                    loss += llg * self.lw_trj
-                    debug_dict['predicted_trajectory_loss']=llp
-                    debug_dict['gt_trajectory_loss']=llg
-            return (loss, debug_dict)
-
+        debug_dict = {
+            'trj_loss':trj_loss,
+            'phs_loss':phs_loss,
+            }
+        if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
+            loss = trj_loss * self.lw_trj +\
+                phs_loss * self.lw_phs
         else:
+            loss = atn_loss * self.lw_atn + \
+                    trj_loss * self.lw_trj + \
+                    phs_loss * self.lw_phs
+                    #self.lw_fod * fod_loss
             debug_dict = {
                 'atn_loss':atn_loss,
-                'trj_loss':trj_loss,
-                'dt_loss':dt_loss,
-                'phs_loss':phs_loss,
-                'weight_loss':weight_loss,
                 'rel_correct_objects':rel_correct_objects}
-            return (atn_loss * self.lw_atn +
-                    trj_loss * self.lw_trj +
-                    phs_loss * self.lw_phs +
-                    weight_loss * self.lw_w + 
-                    dt_loss  * self.lw_dt,
-                    debug_dict
-                )
+            if model_params['contr_trans']['use_gen2']:
+                loss += trj_gen_loss * self.lw_gen_trj
+                debug_dict['trj_gen_loss':trj_gen_loss]
+            if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
+                loss += llp * self.lw_trj
+                loss += llg * self.lw_trj
+                debug_dict['predicted_trajectory_loss']=llp
+                debug_dict['gt_trajectory_loss']=llg
+        return (loss, debug_dict)
     
     def loadingBar(self, count, total, size, addition="", end=False):
         if total == 0:

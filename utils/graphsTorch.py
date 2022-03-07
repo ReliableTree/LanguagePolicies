@@ -212,8 +212,6 @@ class TBoardGraphsTorch():
             tf_dt = self.torch2tf(dt)
             tf_p_dt = self.torch2tf(p_dt)
 
-        print(f'tf_y_true: {tf_y_true.shape}')
-        print(f'tf_y_pred: {tf_y_pred.shape}')
         tf_y_true      = tf_y_true.numpy()
         tf_y_pred      = tf_y_pred.numpy()
         if tf_phase is not None:
