@@ -77,7 +77,6 @@ class NetworkMeta(nn.Module):
         with torch.no_grad():
             for tmodel in self.tailor_models:
                 t_result = tmodel.forward(inpt)
-                print(t_result.shape)
         #self.tailor_optimizers = [torch.optim.Adam(params=tailor_model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) for tailor_model in self.tailor_models]
         #self.meta_optimizers = [torch.optim.Adam(params=tailor_model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) for tailor_model in self.tailor_models]
         self.tailor_optimizers = [torch.optim.SGD(params=tailor_model.parameters(), lr=self.lr) for tailor_model in self.tailor_models]
@@ -90,7 +89,6 @@ class NetworkMeta(nn.Module):
         for i in range(len(self.tailor_models)):
             self.tailor_modules.append(TaylorSignalModule(model=self.tailor_models[i], loss_fct=lfp, optimizer=self.tailor_optimizers[i], meta_optimizer=self.meta_optimizers[i]))
         
-
 
     def setDatasets(self, train_loader, val_loader):
         self.train_ds = train_loader
@@ -121,6 +119,7 @@ class NetworkMeta(nn.Module):
                     validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)   
                     self.model.model_setup['train'] = True                 
                 train_loss.append(self.step(d_in, d_out, train=True, model_params=model_params))
+                self.tailor_step(n=d_in.size(0))
                 
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
@@ -138,6 +137,16 @@ class NetworkMeta(nn.Module):
             if self.use_tboard:
                 self.model.saveModelToFile(add = self.logname + "/", data_path = self.data_path)
     
+    
+    def tailor_step(self, n):
+        trajectories, inpt_obs, success = self.successSimulation.get_success(policy = self.model, env_tag = self.env_tag, n=n)
+        #print('_______________________________________________________________________________________________-')
+
+        #(tailor_modules, inpt, label)
+        debug_dict = tailor_optimizer(tailor_modules = self.tailor_modules, trajectories = trajectories, inpt=inpt_obs, label=success)
+        debug_dict['rel_succ'] = success.mean()
+
+        self.write_tboard_scalar(debug_dict=debug_dict, train=True)
     
     def torch2tf(self, inpt):
         if inpt is not None:
