@@ -31,6 +31,7 @@ class NetworkMeta(nn.Module):
         self.use_tboard = tboard
         self.embedding_memory = {}
         self.env_tag = env_tag
+        self.init_train = True
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -119,7 +120,9 @@ class NetworkMeta(nn.Module):
                     validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)   
                     self.model.model_setup['train'] = True                 
                 train_loss.append(self.step(d_in, d_out, train=True, model_params=model_params))
-                self.tailor_step(n=d_in.size(0))
+
+                if not self.init_train:
+                    self.tailor_step(n=d_in.size(0))
                 
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
@@ -132,7 +135,7 @@ class NetworkMeta(nn.Module):
             
             if (epoch + 1) % model_params['val_every'] == 0:
                 print(f'logname: {self.logname}')
-                self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params)
+                #self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params)
 
             if self.use_tboard:
                 self.model.saveModelToFile(add = self.logname + "/", data_path = self.data_path)
@@ -221,39 +224,50 @@ class NetworkMeta(nn.Module):
 
 
 
-
     def step(self, d_in, d_out, train, model_params):
 
         if train:
-            #main_module, tailor_modules, inpt, d_out, epoch, debug_second, force_tailor_improvement, model_params
-            self.signal_main, _, result, debug_dict = meta_optimizer(
-                main_module = self.signal_main, 
-                tailor_modules = self.tailor_modules, 
-                inpt=d_in, d_out=d_out, 
-                epoch=1,
-                debug_second = False,
-                force_tailor_improvement = True,
-                model_params = model_params)
+            if self.init_train:
+                result = self.model(d_in)
+                loss, debug_dict = self.calculateLoss(d_out, result, model_params)
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+            
+            else:
+                self.signal_main, _, result, debug_dict = meta_optimizer(
+                    main_module = self.signal_main, 
+                    tailor_modules = self.tailor_modules, 
+                    inpt=d_in, d_out=d_out, 
+                    epoch=1,
+                    debug_second = False,
+                    force_tailor_improvement = True,
+                    model_params = model_params)
 
-            loss = debug_dict['main_loss']
+                loss = debug_dict['main_loss']
 
             self.write_tboard_scalar(debug_dict=debug_dict, train=True)
         else:
-            result = self.model(d_in)
-            loss, debug_dict = self.calculateLoss(d_out=d_out, result=result, model_params=model_params)
+            with torch.no_grad():
+                result = self.model(d_in)
+                loss, debug_dict = self.calculateLoss(d_out=d_out, result=result, model_params=model_params)
+            
+            trajectories, inpt_obs, success = self.successSimulation.get_success(policy = self.model, env_tag = self.env_tag, n=30)
+            if success.mean() > 0.1:
+                self.init_train = False
+            debug_dict['success rate'] = success.mean()
+
             if self.last_written_step != self.global_step:
                 if self.use_tboard:
                     self.last_written_step = self.global_step
                     self.write_tboard_scalar(debug_dict=debug_dict, train=False)
-                    '''self.tboard.addValidationScalar("Loss", loss, self.global_step)
-                    for para, value in debug_dict.items():
-                        self.tboard.addValidationScalar("Loss " + para, value, self.global_step)'''
 
                 loss = loss.detach().cpu()
                 if loss < self.global_best_loss:
                     self.global_best_loss = loss
                     if self.use_tboard:
                         self.model.saveModelToFile(add=self.logname + "/best/", data_path= self.data_path)
+                
                     #print(f'model saved with loss: {loss}')
 
         return loss.detach().cpu().numpy()
