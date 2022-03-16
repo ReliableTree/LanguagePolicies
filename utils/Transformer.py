@@ -1,4 +1,6 @@
 import math
+from statistics import mode
+from turtle import forward
 from typing import Tuple
 
 import torch
@@ -8,10 +10,17 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 class TransformerModel(nn.Module):
 
-    def __init__(self, ntoken: int, d_output: int, d_model: int, nhead: int, d_hid: int,
-                 nlayers: int, dropout: float = 0.2):
+    def __init__(self, ntoken = 0, d_output = 0, d_model = 0, nhead = 0, d_hid = 0,
+                 nlayers = 0, dropout = 0.2, model_setup = None):
         super().__init__()
         self.model_type = 'Transformer'
+        if model_setup is not None:
+            ntoken = model_setup['ntoken']
+            d_output = model_setup['d_output']
+            d_model = model_setup['d_model']
+            nhead = model_setup['nhead']
+            d_hid = model_setup['d_hid']
+            nlayers = model_setup['nlayers']
         self.pos_encoder = PositionalEncoding(d_model, dropout)
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
@@ -19,7 +28,7 @@ class TransformerModel(nn.Module):
         self.d_model = d_model
         self.decoder = nn.Linear(d_model, d_output)
 
-        self.init_weights()
+        #self.init_weights()
 
     def init_weights(self) -> None:
         initrange = 0.1
@@ -42,6 +51,24 @@ class TransformerModel(nn.Module):
         output = self.decoder(output)
         return output
 
+class TailorTransformer(TransformerModel):
+    def __init__(self, ntoken=0, d_output=0, d_model=0, nhead=0, d_hid=0, nlayers=0, dropout=0.2, model_setup=None):
+        self.super_init = False
+        self.model_setup = model_setup
+        
+
+    def forward(self, src: Tensor) -> Tensor:
+        if not self.super_init:
+            self.model_setup['ntoken'] = src.size(-1)
+            super().__init__(model_setup = self.model_setup)
+            self.result_encoder = nn.Linear(self.model_setup['d_output'], self.model_setup['d_result'])
+            self.to(src.device)
+            self.super_init = True
+
+        #print(f'src shape: {src.shape}')
+        pre_result = super().forward(src)
+        result = self.result_encoder(pre_result)
+        return result
 
 def generate_square_subsequent_mask(sz: int) -> Tensor:
     """Generates an upper-triangular matrix of -inf, with zeros on diag."""

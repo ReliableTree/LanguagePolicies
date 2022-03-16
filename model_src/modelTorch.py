@@ -45,8 +45,9 @@ contr_trans:                 d_output = self.model_setup['contr_trans']['d_outpu
 '''
 
 class PolicyTranslationModelTorch(nn.Module):
-    def __init__(self, od_path, glove_path = None, model_setup=None):
+    def __init__(self, od_path, glove_path = None, model_setup=None, device = 'cpu'):
         super().__init__()
+        self.device = device
         self.model_setup         = model_setup
         self.units               = 32
         self.output_dims         = 7
@@ -78,25 +79,12 @@ class PolicyTranslationModelTorch(nn.Module):
         self.dout      = nn.Dropout(p=0.25)
 
         # Units needs to be divisible by 7
-        if model_setup['contr_trans']['use_contr_trans']:
-            self.controller_transformer = None
-            count_emb_dim = model_setup['contr_trans']['count_emb_dim']
-            self.count_embedding = nn.Embedding(350, count_emb_dim)
-        else:
-            self.dmp_dt_model = None
-            self.controller = FeedBackControllerTorch(
-                robot_state_size=self.units,
-                dimensions=self.output_dims,
-                basis_functions=self.basis_functions,
-                cnfeatures_size=self.units + self.output_dims + 5,
-                use_LSTM = model_setup['LSTM']['use_LSTM'] 
-            )
+        self.controller_transformer = None
 
         self.last_language = None
 
-        if 'plan_nn' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['plan_nn']['use_plan_nn']:
-            self.plan_nn = None
-            self.prediction_nn = None
+        self.plan_nn = None
+        self.prediction_nn = None
 
         self.memory = {}
 
@@ -117,7 +105,6 @@ class PolicyTranslationModelTorch(nn.Module):
         ###
         if 'meta_world' in self.model_setup and self.model_setup['meta_world']['use']:
             inpt_features = inputs[:,:1].transpose(0,1)
-            seq_len = self.model_setup['meta_world']['seq_len']
         else:
             seq_len = 350
             language_in   = inputs[0]
@@ -137,7 +124,7 @@ class PolicyTranslationModelTorch(nn.Module):
             result['diff']    = diff
             #inpt_features = inpt_features[:,:1,:].repeat([1, inpt_features.size(1), 1])
         #print(f'inpt featrue: {inpt_features.shape}')
-        current_plan = self.get_plan(inpt_features, seq_len) #350x16x8
+        current_plan = self.get_plan(inpt_features) #350x16x8
         #if optimize:
         #    current_plan = self.optimize(current_plan, inpt_features)
 
@@ -174,33 +161,6 @@ class PolicyTranslationModelTorch(nn.Module):
         0.4917714894, 0.0000000000]).to(robot.device)
         return ((comp_vec - robot[0])**2).sum() < 1, comp_vec
 
-    def optimize(self, inpt, input_features):
-
-        import copy
-        opt_inpt = torch.clone(inpt)
-        opt_inpt = opt_inpt.detach()
-        opt_inpt = torch.zeros_like(opt_inpt)
-        print('before')
-        print(opt_inpt[0,0])
-        #print(opt_inpt)
-        opt_inpt.requires_grad = True
-        opt = torch.optim.Adam([opt_inpt], lr=1e20)
-        epochs = 1000
-        self.prediction_nn_copy = copy.deepcopy(self.prediction_nn)
-        opt_input_features = torch.zeros_like(input_features)
-
-        for i in range(epochs):
-            opt.zero_grad()
-            loss = (self.pred_forward(inpt_features=opt_input_features, current_plan=opt_inpt, freeze = False)[0]).sum()
-            #print(f'loss in optimizer: {loss}')
-            loss.backward()
-            opt.step()
-            if i%100==0:
-                #print(opt_inpt.shape)
-                print(opt_inpt._grad[0,0])
-                print(opt_inpt[0,0])
-                print(f'loss in optimizer: {loss}')
-        return opt_inpt
 
     def get_language(self, language_in):
         self.last_language = language_in
@@ -295,45 +255,13 @@ class PolicyTranslationModelTorch(nn.Module):
             cfeatures, diff = self.use_memory(cfeatures, 'cfeatures', robot[:,0])
         return torch.cat((cfeatures, robot[:,0]), dim=-1).unsqueeze(0), diff  #1x16x46+7 = 1x16x53
 
-    def get_plan(self, inpt_features, seq_len):
+    def get_plan(self, inpt_features):
         if self.plan_nn is None:
-            num_upconvs = self.model_setup['contr_trans']['plan_nn']['plan']['num_upconvs']
-            stride= self.model_setup['contr_trans']['plan_nn']['plan']['stride']
-            d_output= self.model_setup['contr_trans']['plan_nn']['plan']['d_output']
-            nhead= self.model_setup['contr_trans']['plan_nn']['plan']['nhead']
-            d_hid= self.model_setup['contr_trans']['plan_nn']['plan']['d_hid']
-            nlayers= self.model_setup['contr_trans']['plan_nn']['plan']['nlayers']
-            use_layernorm = self.model_setup['contr_trans']['plan_nn']['plan']['use_layernorm']
-            self.plan_nn = TransformerUpConv(num_upconvs=num_upconvs, stride=stride, ntoken=inpt_features.size(-1), d_output=d_output, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=seq_len, use_layernorm=use_layernorm).to(inpt_features.device)
+            model_setup = self.model_setup['plan_nn']['plan']
+            model_setup['ntoken'] = inpt_features.size(-1)
+            self.plan_nn = TransformerUpConv(model_setup).to(inpt_features.device)
         return self.plan_nn.forward(inpt_features) #350x16x8
     
-    def pred_forward(self, inpt_features, current_plan, gt_tjkt=None, mean_over_do=False, freeze = False):
-        import copy
-        if mean_over_do:
-            c_plan = current_plan.mean(dim=1).unsqueeze(1).repeat([1,current_plan.size(1),1]) #350 x 16 x 53
-        else:
-            c_plan = current_plan
-        pred_features = inpt_features.repeat([c_plan.size(0), 1, 1]) #350 x 16 x 53
-        pred_features_p = torch.cat((pred_features, c_plan[:,:,:7]), dim = -1) #350x16x60
-        if self.prediction_nn is None:
-            num_upconvs = self.model_setup['contr_trans']['plan_nn']['plan']['num_upconvs']
-            stride= self.model_setup['contr_trans']['plan_nn']['plan']['stride']
-            nhead= self.model_setup['contr_trans']['plan_nn']['plan']['nhead']
-            d_hid= self.model_setup['contr_trans']['plan_nn']['plan']['d_hid']
-            nlayers= self.model_setup['contr_trans']['plan_nn']['plan']['nlayers']
-            use_layernorm = self.model_setup['contr_trans']['plan_nn']['plan']['use_layernorm']
-            self.prediction_nn = TransformerUpConv(num_upconvs=num_upconvs, stride=stride, ntoken=pred_features_p.size(-1), d_output=1, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=350, use_layernorm=use_layernorm, upconv=False).to(current_plan.device)
-
-        if freeze:
-            predicted_loss_p = self.prediction_nn_copy(pred_features_p).squeeze() #1x16x1
-        else:
-            predicted_loss_p = self.prediction_nn(pred_features_p).squeeze() #1x16x1
-        if gt_tjkt is not None:
-            pred_features_gt = torch.cat((pred_features, gt_tjkt.transpose(0,1)), dim=-1) #350x16x60
-            predicted_loss_gt = self.prediction_nn(pred_features_gt).squeeze()
-        else:
-            predicted_loss_gt = None
-        return predicted_loss_p, predicted_loss_gt
 
     def getVariables(self, step=None):
         return self.parameters()

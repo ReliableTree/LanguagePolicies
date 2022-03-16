@@ -7,19 +7,21 @@ from pickle import NONE
 import tensorflow as tf
 import sys
 import numpy as np
-from torch.serialization import save
 from utils.graphsTorch import TBoardGraphsTorch
+from utilsMW.metaOptimizer import SignalModule, TaylorSignalModule, meta_optimizer, tailor_optimizer
+from utilsMW.makeTrainingData import SuccessSimulation
 
 import torch
 import torch.nn as nn
 import time
 import copy
 
-class NetworkTorch(nn.Module):
-    def __init__(self, model, data_path, logname, lr, lw_atn, lw_w, lw_trj, lw_gen_trj, lw_dt, lw_phs, lw_fod, log_freq=25, gamma_sl = 0.995, device = 'cuda', use_transformer = True, tboard=True):
+class NetworkMeta(nn.Module):
+    def __init__(self, model, tailor_models, env_tag, data_path, logname, lr, lw_atn, lw_w, lw_trj, lw_gen_trj, lw_dt, lw_phs, lw_fod, log_freq=25, gamma_sl = 0.995, device = 'cuda', use_transformer = True, tboard=True):
         super().__init__()
         self.optimizer         = None
         self.model             = model
+        self.tailor_models      = tailor_models
         self.total_steps       = 0
         self.logname           = logname
         self.lr = lr
@@ -28,6 +30,7 @@ class NetworkTorch(nn.Module):
         self.use_transformer = use_transformer
         self.use_tboard = tboard
         self.embedding_memory = {}
+        self.env_tag = env_tag
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -55,15 +58,51 @@ class NetworkTorch(nn.Module):
         self.ce_loss = nn.CrossEntropyLoss()
         self.gamma_sl = gamma_sl
 
+        self.successSimulation = SuccessSimulation()
+
     def setup_model(self, model_params):
         with torch.no_grad():
             for step, (d_in, d_out) in enumerate(self.train_ds):
                 result = self.model(inputs=d_in)
                 break
+        #self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
+        self.optimizer = torch.optim.SGD(params=self.model.parameters(), lr=self.lr) 
+
+        self.signal_main = SignalModule(model=self.model, loss_fct=self.calculateLoss, optimizer=self.optimizer)
+
+        trajectories, inpt_obs, success = self.successSimulation.get_success(policy = self.model, env_tag = self.env_tag, n = 2)
+        inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
+        inpt = torch.concat((trajectories, inpt_obs), dim = -1)
+        #inpt = inpt.transpose(0,1)
+        with torch.no_grad():
+            for tmodel in self.tailor_models:
+                t_result = tmodel.forward(inpt)
+                print(t_result.shape)
+        #self.tailor_optimizers = [torch.optim.Adam(params=tailor_model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) for tailor_model in self.tailor_models]
+        #self.meta_optimizers = [torch.optim.Adam(params=tailor_model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) for tailor_model in self.tailor_models]
+        self.tailor_optimizers = [torch.optim.SGD(params=tailor_model.parameters(), lr=self.lr) for tailor_model in self.tailor_models]
+        self.meta_optimizers = [torch.optim.SGD(params=tailor_model.parameters(), lr=self.lr) for tailor_model in self.tailor_models]
+        
+        
+        def lfp(result, label):
+            return ((result-label)**2).mean()
+        self.tailor_modules = []
+        for i in range(len(self.tailor_models)):
+            self.tailor_modules.append(TaylorSignalModule(model=self.tailor_models[i], loss_fct=lfp, optimizer=self.tailor_optimizers[i], meta_optimizer=self.meta_optimizers[i]))
+        
+
 
     def setDatasets(self, train_loader, val_loader):
         self.train_ds = train_loader
         self.val_ds   = val_loader
+
+
+    def train_tailor(self, ):
+        trajectories, inpt_obs, success = self.successSimulation(policy = self.model, env_tag = self.env_tag, n = 10)
+        inpt = torch.concat((trajectories, inpt_obs), dim = 0)
+        debug_dict = tailor_optimizer(tailor_modules=self.tailor_modules, inpt=inpt, label=success)
+        self.write_tboard_train_scalar(debug_dict=debug_dict)
+
 
     def train(self, epochs, model_params):
         self.global_step = 0
@@ -77,10 +116,12 @@ class NetworkTorch(nn.Module):
             #print(f'train embedding: {model_params["obj_embedding"]["train_embedding"]}')
             self.model.model_setup['train'] = True
             for step, (d_in, d_out) in enumerate(self.train_ds):
+                #print(f'inpt shape: {d_in.shape}')
                 if (step+1) % 400 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)   
-                    self.model.model_setup['train'] = True          
+                    self.model.model_setup['train'] = True                 
                 train_loss.append(self.step(d_in, d_out, train=True, model_params=model_params))
+                
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
                     self.total_steps += 1
@@ -88,6 +129,7 @@ class NetworkTorch(nn.Module):
                 if step > 3:
                     pass#break
             self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
+            #self.train_tailor()
             
             if (epoch + 1) % model_params['val_every'] == 0:
                 print(f'logname: {self.logname}')
@@ -111,21 +153,12 @@ class NetworkTorch(nn.Module):
         model_params = copy.deepcopy(model_params) #dont change model params globally
         self.model.model_setup['train'] = False
         #with torch.no_grad():
-        #self.optimizer.zero_grad()
         if (not quick) and (not model_params['quick_val']):
             print("Running full validation...")
         val_loss = []
-        val_loss_opt = []
-        model_params['contr_trans']['recursive'] = False
         for step, (d_in, d_out) in enumerate(self.val_ds):
             loss = self.step(d_in, d_out, train=False, model_params=model_params)
-            #loss = self.step(d_in, d_out, train=False, recursive = True)
             val_loss.append(loss)
-            
-            
-            loss_opt = self.step(d_in, d_out, train=False, model_params=model_params, optimize=True)
-            #loss = self.step(d_in, d_out, train=False, recursive = True)
-            val_loss_opt.append(loss_opt)
             
             if quick or model_params['quick_val']:
                 break
@@ -141,7 +174,6 @@ class NetworkTorch(nn.Module):
                 in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
                 in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
                 d_in_graphs  = (in0, in1, in2)
-                model_params['contr_trans']['recursive'] = False
                 out_model = self.model(d_in_graphs)
                 self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
                                 (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
@@ -160,10 +192,8 @@ class NetworkTorch(nn.Module):
         #                tf.tile(tf.expand_dims([d_out[2][0]], 0),[50,1]), tf.tile(tf.expand_dims(d_out[3][0], 0),[50,1,1]))
 
         loss = np.mean(val_loss)
-        loss_opt = np.mean(val_loss_opt)
         if pnt:
             print("  Validation Loss: {:.6f}".format(loss))
-            print("  Validation Loss optimized: {:.6f}".format(loss_opt))
         if not quick:
             if loss < self.global_best_loss_val:
                 self.global_best_loss_val = loss
@@ -172,49 +202,43 @@ class NetworkTorch(nn.Module):
                 print(f'best val model saved with: {loss}')
         return np.mean(val_loss)
 
-    def step(self, d_in, d_out, train, model_params, optimize = False):
-        if not ('meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']):
-            generated, attention, delta_t, weights, phase, loss_atn = d_out
-            if 'use_dropout' in model_params and model_params['use_dropout']:
-                self.model.train()
-            else:
-                self.model.eval()
-            if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-                result = self.model(d_in, gt_attention = attention, gt_tjkt=generated, optimize=optimize)
-            else:
-                result = self.model(d_in, gt_attention = attention)
-        else:
-            result = self.model(d_in)
+    def write_tboard_scalar(self, debug_dict, train):
+        if self.use_tboard:
+                for para, value in debug_dict.items():
+                    if train:
+                        self.tboard.addTrainScalar(para, value, self.global_step)
+                    else:
+                        self.tboard.addValidationScalar(para, value, self.global_step)
 
-        loss, debug_dict = self.calculateLoss(d_out, result, model_params)
-        #loss, (atn, trj, dt, phs, wght, rel_obj) = self.calculateLoss(d_out, result, train)
+
+
+
+    def step(self, d_in, d_out, train, model_params):
 
         if train:
-            if not self.optimizer:
-                #self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
-                self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
-                #self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999)) 
-                #self.optimizer = torch.optim.SGD(params=self.model.parameters(), lr=self.lr, weight_decay=1e-2) 
-                #self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 1.0, gamma=self.gamma_sl)
-            #print(f'num parametrs in model: {len(list(self.model.parameters()))}')
-            self.optimizer.zero_grad()
-            loss.backward()
+            #main_module, tailor_modules, inpt, d_out, epoch, debug_second, force_tailor_improvement, model_params
+            self.signal_main, _, result, debug_dict = meta_optimizer(
+                main_module = self.signal_main, 
+                tailor_modules = self.tailor_modules, 
+                inpt=d_in, d_out=d_out, 
+                epoch=1,
+                debug_second = False,
+                force_tailor_improvement = True,
+                model_params = model_params)
 
-            '''for i, para in enumerate(list(self.model.parameters())):
-                print(f'para num {i} has grad sum {para.grad.detach().sum()}')'''
-            self.optimizer.step()
-            if self.use_tboard:
-                self.tboard.addTrainScalar("Loss", loss, self.global_step)
-                for para, value in debug_dict.items():
-                    self.tboard.addTrainScalar("Loss " + para, value, self.global_step)
+            loss = debug_dict['main_loss']
+
+            self.write_tboard_scalar(debug_dict=debug_dict, train=True)
         else:
-            self.model.eval()
+            result = self.model(d_in)
+            loss, debug_dict = self.calculateLoss(d_out=d_out, result=result, model_params=model_params)
             if self.last_written_step != self.global_step:
                 if self.use_tboard:
                     self.last_written_step = self.global_step
-                    self.tboard.addValidationScalar("Loss", loss, self.global_step)
+                    self.write_tboard_scalar(debug_dict=debug_dict, train=False)
+                    '''self.tboard.addValidationScalar("Loss", loss, self.global_step)
                     for para, value in debug_dict.items():
-                        self.tboard.addValidationScalar("Loss " + para, value, self.global_step)
+                        self.tboard.addValidationScalar("Loss " + para, value, self.global_step)'''
 
                 loss = loss.detach().cpu()
                 if loss < self.global_best_loss:
@@ -249,7 +273,7 @@ class NetworkTorch(nn.Module):
     def calcMSE(self, a, b):
         return ((a.squeeze() - b.squeeze())**2).mean()
 
-    def calculateLoss(self, d_out, result, model_params):
+    def calculateLoss(self, d_out, result, model_params, prefix = ''):
         if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
             generated, phase = d_out
         else:
@@ -261,39 +285,19 @@ class NetworkTorch(nn.Module):
 
         gen_trj = result['gen_trj']
         phs = result['phs']
-        if model_params['contr_trans']['use_gen2']:
-            gen_gen_trj = result['gen_gen_trj']
-        if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-            loss_prediction = result['loss_prediction']
-            loss_gt = result['loss_gt']
 
-        weight_dim  = torch.tensor([1.0, 1.0, 1.0, 1.0, 1, 1.0, 1.], device = generated.device)
-
-
-        #fod_loss = nn.MSELoss()(gen_trj[:,1:], gen_trj[:, :-1])
-
-        #repeated_weight_dim = weight_dim.reshape(1,1,-1).repeat([gen_trj.size(0), gen_trj.size(1), 1])
-        #phs_loss = self.calculateMSEWithPaddingMask(phase, phs.squeeze(), loss_atn).mean()
         phs_loss = self.calcMSE(phase, phs)
         trj_loss = self.calcMSE(generated, gen_trj)
-        #trj_loss = self.calculateMSEWithPaddingMask(generated, gen_trj, repeated_weight_dim).mean(-1) #16?
-        if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-            llp = ((trj_loss - loss_prediction)**2).mean()
-            llg = ((0-loss_gt)**2).mean()
-        #trj_loss = (trj_loss).mean()
-
-        if model_params['contr_trans']['use_gen2']:
-            trj_gen_loss = self.calculateMSEWithPaddingMask(generated, gen_gen_trj, repeated_weight_dim)
-            #trj_gen_loss = (trj_gen_loss * loss_atn).mean()
-            trj_gen_loss = (trj_gen_loss).mean()
 
         debug_dict = {
-            'trj_loss':trj_loss,
-            'phs_loss':phs_loss,
+            prefix + 'trj_loss':trj_loss,
+            prefix + 'phs_loss':phs_loss,
             }
         if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
             loss = trj_loss * self.lw_trj +\
                 phs_loss * self.lw_phs
+            debug_dict[prefix + 'main_loss'] = loss
+        
         else:
             loss = atn_loss * self.lw_atn + \
                     trj_loss * self.lw_trj + \
@@ -302,14 +306,6 @@ class NetworkTorch(nn.Module):
             debug_dict = {
                 'atn_loss':atn_loss,
                 'rel_correct_objects':rel_correct_objects}
-            if model_params['contr_trans']['use_gen2']:
-                loss += trj_gen_loss * self.lw_gen_trj
-                debug_dict['trj_gen_loss':trj_gen_loss]
-            if 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-                loss += llp * self.lw_trj
-                loss += llg * self.lw_trj
-                debug_dict['predicted_trajectory_loss']=llp
-                debug_dict['gt_trajectory_loss']=llg
         return (loss, debug_dict)
     
     def loadingBar(self, count, total, size, addition="", end=False):
@@ -330,29 +326,15 @@ class NetworkTorch(nn.Module):
         gen_trj = result['gen_trj']
         atn     = result['atn']
         phase   = result['phs']
-        if model_params['contr_trans']['use_gen2']:
-            gen_gen_trj = result['gen_gen_trj']
-        elif 'predictionNN' in model_params['contr_trans'] and model_params['contr_trans']['predictionNN']:
-            loss_prediction = result['loss_prediction']
-        dmp_dt = None
-
 
 
         self.tboard.plotClassAccuracy(attention, self.tf2torch(tf.math.reduce_mean(self.torch2tf(atn), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(atn), axis=0)), self.tf2torch(self.torch2tf(language)), stepid=self.global_step)
-        if not model_params['contr_trans']['use_contr_trans']:
-            self.tboard.plotDMPTrajectory(target_trj, self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0)), self.tf2torch(tf.math.reduce_std(self.torch2tf(gen_trj), axis=0)),
-                                        self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0)), delta_t, self.tf2torch(tf.math.reduce_mean(self.torch2tf(dmp_dt), axis=0)), stepid=self.global_step)
-        else:
-            path_to_plots = self.data_path + "/plots/"+ str(self.logname) + '/' + str(epoch) + '/'
-            gen_tr_trj= self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0))
-            gen_tr_phase = self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0))
-            self.tboard.plotDMPTrajectory(target_trj, gen_tr_trj, torch.zeros_like(gen_tr_trj),
-                                        gen_tr_phase, delta_t, None, stepid=self.global_step, save=save, name_plot=name_plot, path=path_to_plots)
-            if model_params['contr_trans']['use_gen2']:
-                gen_gen_trj= self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_gen_trj), axis=0))
-                self.tboard.plotDMPTrajectory(target_trj, gen_gen_trj, torch.zeros_like(gen_gen_trj),
-                                        gen_tr_phase, delta_t, None, stepid=self.global_step, name='Gen - Trajectoy', save=save, name_plot='gengen_' + name_plot, path=path_to_plots)
-
+        path_to_plots = self.data_path + "/plots/"+ str(self.logname) + '/' + str(epoch) + '/'
+        gen_tr_trj= self.tf2torch(tf.math.reduce_mean(self.torch2tf(gen_trj), axis=0))
+        gen_tr_phase = self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0))
+        self.tboard.plotDMPTrajectory(target_trj, gen_tr_trj, torch.zeros_like(gen_tr_trj),
+                                    gen_tr_phase, delta_t, None, stepid=self.global_step, save=save, name_plot=name_plot, path=path_to_plots)
+        
     def createGraphsMW(self, d_in, d_out, result, save = False, name_plot = '', epoch = 0, model_params={}):
         target_trj, target_phase  = d_out
         gen_trj = result['gen_trj'][0]

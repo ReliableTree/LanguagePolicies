@@ -14,11 +14,25 @@ class TorchTranspose(nn.Module):
         return result
         
 class TransformerUpConv(nn.Module):
-    def __init__(self, num_upconvs, stride, ntoken: int, d_output: int, d_model: int, nhead: int, d_hid: int,
-                 nlayers: int, dilation = 2, dropout: float = 0.5, seq_len = 350, use_layernorm=True, upconv = True) -> None:
+    def __init__(self, model_setup) -> None:
         super().__init__()
-        self.seq_len = seq_len
+        #num_upconvs=num_upconvs, stride=stride, ntoken=inpt_features.size(-1), d_output=d_output, d_model=d_hid, nhead=nhead, d_hid=d_hid, nlayers=nlayers, seq_len=seq_len, use_layernorm=use_layernorm, upconv=upconv
+        num_upconvs = model_setup['num_upconvs']
+        stride= model_setup['stride']
+        d_output= model_setup['d_output']
+        nhead= model_setup['nhead']
+        d_hid= model_setup['d_hid']
+        d_model = d_hid
+        nlayers= model_setup['nlayers']
+        use_layernorm = model_setup['use_layernorm']
+        upconv = model_setup['upconv']
+        ntoken = model_setup['ntoken']
         module_list = nn.ModuleList()
+        self.seq_len = model_setup['seq_len']
+        if upconv:
+            dilation = model_setup['dilation']
+
+
         for i in range(num_upconvs):
             if i == 0:
                 module_list += [
