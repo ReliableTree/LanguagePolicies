@@ -79,6 +79,21 @@ class PolicyTranslationModelTorch(nn.Module):
         self.dout      = nn.Dropout(p=0.25)
 
         # Units needs to be divisible by 7
+        # Units needs to be divisible by 7
+        '''if model_setup['contr_trans']['use_contr_trans']:
+            self.controller_transformer = None
+            count_emb_dim = model_setup['contr_trans']['count_emb_dim']
+            self.count_embedding = nn.Embedding(350, count_emb_dim)
+        else:
+            self.dmp_dt_model = None
+            self.controller = FeedBackControllerTorch(
+                robot_state_size=self.units,
+                dimensions=self.output_dims,
+                basis_functions=self.basis_functions,
+                cnfeatures_size=self.units + self.output_dims + 5,
+                use_LSTM = model_setup['LSTM']['use_LSTM'] 
+            )'''
+        ###muss gelöscht werden
         self.controller_transformer = None
 
         self.last_language = None
