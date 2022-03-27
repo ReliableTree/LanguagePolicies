@@ -1,6 +1,7 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
 import pickle
+from readline import set_completion_display_matches_hook
 from numpy.core.fromnumeric import mean
 import tensorflow as tf
 import numpy as np
@@ -53,6 +54,7 @@ class PolicyTranslationModelTorch(nn.Module):
         self.output_dims         = 7
         self.basis_functions     = 11
         self.ptgloabl_units      = 42
+        self.kernel = None
 
         if od_path != "":                
             od_path    = pathlib.Path(od_path)/"saved_model" 
@@ -270,12 +272,28 @@ class PolicyTranslationModelTorch(nn.Module):
             cfeatures, diff = self.use_memory(cfeatures, 'cfeatures', robot[:,0])
         return torch.cat((cfeatures, robot[:,0]), dim=-1).unsqueeze(0), diff  #1x16x46+7 = 1x16x53
 
+    def smoothing(self, inpt):
+        # Create gaussian kernels
+        shape = inpt.shape
+        if self.kernel is None:
+            self.kernel = torch.FloatTensor([[[0.006, 0.061, 0.242, 0.383, 0.242, 0.061, 0.006]]]).to(inpt.device)
+        # Apply smoothing
+        smoothed =  torch.nn.functional.conv1d(inpt.reshape(1,1,-1), self.kernel, padding='same')
+        return smoothed.reshape([*shape])
+
     def get_plan(self, inpt_features):
-        if self.plan_nn is None:
+        in_transformer = inpt_features.repeat(self.model_setup['plan_nn']['plan']['seq_len'], 1, 1)
+        if (self.plan_nn is None):
             model_setup = self.model_setup['plan_nn']['plan']
             model_setup['ntoken'] = inpt_features.size(-1)
-            self.plan_nn = TransformerUpConv(model_setup).to(inpt_features.device)
-        return self.plan_nn.forward(inpt_features) #350x16x8
+            #self.plan_nn = TransformerUpConv(model_setup).to(inpt_features.device)
+            self.plan_nn = TransformerModel(model_setup=self.model_setup['plan_nn']['plan']).to(inpt_features.device)
+        plan = self.plan_nn.forward(in_transformer) #350x16x8
+        #print(f'plan sape: {plan.shape}')
+
+        #smooth_plan = self.smoothing(plan.transpose(0,2)).transpose(0,2)
+        #print(f'smooth plan shape: {smooth_plan.shape}')
+        return plan
     
 
     def getVariables(self, step=None):

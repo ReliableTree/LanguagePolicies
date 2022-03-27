@@ -61,13 +61,24 @@ class TailorTransformer(TransformerModel):
         if not self.super_init:
             self.model_setup['ntoken'] = src.size(-1)
             super().__init__(model_setup = self.model_setup)
-            self.result_encoder = nn.Linear(self.model_setup['d_output'], self.model_setup['d_result'])
+            self.result_encoder = nn.Linear(self.model_setup['d_output'] * self.model_setup['seq_len'], self.model_setup['d_result'])
             self.to(src.device)
             self.super_init = True
 
+        #src: batch, seq, dim
+        src = src.transpose(0,1)
+        #src = seq, batch, dim
         #print(f'src shape: {src.shape}')
         pre_result = super().forward(src)
+        pre_result = pre_result.transpose(0,1)
+        #print(f'preresult shape {pre_result.shape}')
+        #preresult = batch, seq, dim
+        pre_result = pre_result.reshape(pre_result.size(0), -1)
+        #print(f'preresult shape {pre_result.shape}')
+
         result = self.result_encoder(pre_result)
+        #print(f'result shape {result.shape}')
+
         return result
 
 def generate_square_subsequent_mask(sz: int) -> Tensor:
