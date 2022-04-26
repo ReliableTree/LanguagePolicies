@@ -36,7 +36,6 @@ class NetworkMeta(nn.Module):
         self.embedding_memory = {}
         self.env_tag = env_tag
         self.init_train = True
-        self.model_state_dict = self.model.state_dict()
         self.max_success_rate = 0
 
         if self.logname.startswith("Intel$"):
@@ -88,18 +87,33 @@ class NetworkMeta(nn.Module):
         with torch.no_grad():
             for tmodel in self.tailor_models:
                 t_result = tmodel.forward(inpt)
-        self.tailor_optimizers = [torch.optim.Adam(params=tailor_model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=0) for tailor_model in self.tailor_models]
-        self.meta_optimizers = [torch.optim.Adam(params=tailor_model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=0) for tailor_model in self.tailor_models]
+        self.tailor_optimizers = [torch.optim.Adam(params=tailor_model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) for tailor_model in self.tailor_models]
+        self.meta_optimizers = [torch.optim.Adam(params=tailor_model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) for tailor_model in self.tailor_models]
         #self.tailor_optimizers = [torch.optim.SGD(params=tailor_model.parameters(), lr=0.05*self.lr) for tailor_model in self.tailor_models]
         #self.meta_optimizers = [torch.optim.SGD(params=tailor_model.parameters(), lr=self.lr) for tailor_model in self.tailor_models]
-        
         
         def lfp(result, label):
             return ((result-label)**2).mean()
         self.tailor_modules = []
         for i in range(len(self.tailor_models)):
             self.tailor_modules.append(TaylorSignalModule(model=self.tailor_models[i], loss_fct=lfp, optimizer=self.tailor_optimizers[i], meta_optimizer=self.meta_optimizers[i]))
-        
+        self.model_state_dict = self.model.state_dict()
+        self.setTailorDataset()
+
+    def setTailorDataset(self):
+        trajectories, inpt_obs, success = self.successSimulation.get_success(policy = self.model, env_tag = self.env_tag, n=150)
+        self.trajectories = trajectories
+        self.inpt_obs = inpt_obs
+        self.success = success
+        for step, (d_in, d_out) in enumerate(self.train_ds):
+            self.inpt_obs = torch.cat((self.inpt_obs, d_in[:,:1]), dim = 0)
+            self.trajectories = torch.cat((self.trajectories, d_out[0]))
+            self.success = torch.cat((self.success, torch.ones(d_in.size(0), device = d_in.device)))
+        '''print('__________________________________________--')
+        print(self.inpt_obs.shape)
+        print(self.trajectories.shape)
+        print(self.success.shape)'''
+
 
     def setDatasets(self, train_loader, val_loader):
         self.train_ds = train_loader
@@ -133,15 +147,14 @@ class NetworkMeta(nn.Module):
 
                 while loss_module > 0.01:
                     lma = None
-                    for trajectories, inpt_obs, success in self.tailor_loader:
+                    for succ, failed in self.tailor_loader:
                         self.global_step += 1
-                        debug_dict = self.tailor_step(trajectories, inpt_obs, success)
-                        if 'tailor_module' in debug_dict:
-                            if lma is None:
-                                lma = debug_dict['tailor_module'].reshape(1)
-                            else:
-                                lma = torch.cat((lma, debug_dict['tailor_module'].reshape(1)), 0)
-                            loss_module = lma.mean()
+                        debug_dict = self.tailor_step(succ, failed)
+                        if lma is None:
+                            lma = debug_dict['tailor_module'].reshape(1)
+                        else:
+                            lma = torch.cat((lma, debug_dict['tailor_module'].reshape(1)), 0)
+                        loss_module = lma.mean()
             for step, (d_in, d_out) in enumerate(self.train_ds):
                 #print(f'inpt shape: {d_in.shape}')
                 if (step+1) % 400 == 0:
@@ -164,9 +177,8 @@ class NetworkMeta(nn.Module):
 
     
     
-    def tailor_step(self, trajectories, inpt_obs, success):
-        debug_dict = tailor_optimizer(tailor_modules = self.tailor_modules, trajectories = trajectories, inpt=inpt_obs, label=success)
-        debug_dict['rel_succ'] = success.mean()
+    def tailor_step(self, succ, failed):
+        debug_dict = tailor_optimizer(tailor_modules = self.tailor_modules, succ=succ, failed=failed)
         self.write_tboard_scalar(debug_dict=debug_dict, train=True)
         return debug_dict
     
@@ -186,7 +198,7 @@ class NetworkMeta(nn.Module):
         #with torch.no_grad():
         if (not quick):
             print("Running full validation...")
-            trajectories, inpt_obs, success = self.successSimulation.get_success(policy = self.model, env_tag = self.env_tag, n=150)
+            trajectories, inpt_obs, success = self.successSimulation.get_success(policy = self.model, env_tag = self.env_tag, n=30)
             debug_dict = {'success rate' : success.mean()}
             self.write_tboard_scalar(debug_dict=debug_dict, train=False)
 
@@ -198,18 +210,14 @@ class NetworkMeta(nn.Module):
 
             if mean_success > 0.5 or True:
                 self.init_train = False
-                if self.trajectories is None:
-                    self.trajectories = trajectories
-                    self.inpt_obs = inpt_obs
-                    self.success = success
-                else:
-                    self.trajectories = torch.cat((self.trajectories, trajectories), dim=0)[:-12000]
-                    self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs), dim=0)[:-12000]
-                    self.success = torch.cat((self.success, success), dim=0)[:-12000]
+                self.trajectories = torch.cat((self.trajectories, trajectories), dim=0)[:-15000]
+                self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs), dim=0)[:-15000]
+                self.success = torch.cat((self.success, success), dim=0)[:-15000]
                 tailor_data = TorchDatasetTailor(trajectories= self.trajectories, obsv=self.inpt_obs, success=self.success)
 
                 #train_data = torch.utils.data.Subset(train_data, train_indices).to(device)
-                self.tailor_loader = DataLoader(tailor_data, batch_size=20, shuffle=True)
+                self.tailor_loader = DataLoader(tailor_data, batch_size=2, shuffle=True)
+
             else:
                 self.init_train = True
         
