@@ -203,17 +203,20 @@ class TBoardGraphsTorch():
         
         return result
 
-    def plotDMPTrajectory(self, y_true, y_pred, y_pred_std = None, phase= None, dt= None, p_dt= None, stepid= None, name = "Trajectory", save = False, name_plot = None, path=None):
+    def plotDMPTrajectory(self, y_true, y_pred, y_pred_std = None, phase= None, \
+        dt= None, p_dt= None, stepid= None, name = "Trajectory", save = False, \
+            name_plot = None, path=None, tol_neg = None, tol_pos=None, inpt = None):
         tf_y_true = self.torch2tf(y_true)
         tf_y_pred = self.torch2tf(y_pred)
         tf_phase = self.torch2tf(phase)
-
+        tf_inpt = self.torch2tf(inpt)
         if p_dt is not None:
             tf_dt = self.torch2tf(dt)
             tf_p_dt = self.torch2tf(p_dt)
 
         tf_y_true      = tf_y_true.numpy()
         tf_y_pred      = tf_y_pred.numpy()
+        tf_inpt        = tf_inpt.numpy()
         if tf_phase is not None:
             tf_phase       = tf_phase.numpy()
 
@@ -233,10 +236,21 @@ class TBoardGraphsTorch():
             # GT Trajectory:
             ax[idx,idy].plot(range(trj_len), tf_y_true[:,sp],   alpha=1.0, color='forestgreen')            
             ax[idx,idy].plot(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], alpha=0.75, color='mediumslateblue')
+            if tol_neg is not None:
+                neg_inpt = tf_y_true[:,sp] + tol_neg[sp].cpu().numpy()
+                pos_inpt = tf_y_true[:,sp] + tol_pos[sp].cpu().numpy()
+
+                ax[idx,idy].plot(range(tf_y_pred.shape[0]), neg_inpt, alpha=0.75, color='orangered')
+                ax[idx,idy].plot(range(tf_y_pred.shape[0]), pos_inpt, alpha=0.75, color='orangered')
+
             #ax[idx,idy].errorbar(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], xerr=None, yerr=None, alpha=0.25, fmt='none', color='mediumslateblue')
             #ax[idx,idy].set_ylim([-0.1, 1.1])
             if p_dt is not None:
                 ax[idx,idy].plot([tf_dt, tf_dt], [0.0,1.0], linestyle=":", color='forestgreen')
+
+        if inpt is not None:
+            ax[-1,-1].clear()
+            ax[-1,-1].plot(range(inpt.shape[-1]), tf_inpt,   alpha=1.0, color='forestgreen')     
         
         if tf_phase is not None:
             ax[2,2].clear()

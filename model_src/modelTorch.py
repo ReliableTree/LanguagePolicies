@@ -139,23 +139,13 @@ class PolicyTranslationModelTorch(nn.Module):
             inpt_features, diff = self.get_inpt_features(features, gt_attention, robot) #1x16x53
             result['atn']     = self.obj_atn
             result['diff']    = diff
-            #inpt_features = inpt_features[:,:1,:].repeat([1, inpt_features.size(1), 1])
-        #print(f'inpt featrue: {inpt_features.shape}')
-        current_plan = self.get_plan(inpt_features) #350x16x8
-        #if optimize:
-        #    current_plan = self.optimize(current_plan, inpt_features)
 
-        #if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
-        #    predicted_loss_p, predicted_loss_gt = self.pred_forward(inpt_features, current_plan, gt_tjkt, mean_over_do)
+        current_plan = self.get_plan(inpt_features) #350x16x8
         
         current_plan = current_plan.transpose(0,1) #16x350x8
-        result['gen_trj'] = current_plan[:,:,:-1]
-        result['phs']     = current_plan[:,:,-1]
-
-
-        #if 'predictionNN' in self.model_setup['contr_trans'] and self.model_setup['contr_trans']['predictionNN']:
-        #    result['loss_prediction'] = predicted_loss_p
-        #    result['loss_gt']         = predicted_loss_gt
+        result['gen_trj'] = current_plan
+        '''result['gen_trj'] = current_plan[:,:,:-1]
+        result['phs']     = current_plan[:,:,-1]'''
         return result
 
 
@@ -285,8 +275,9 @@ class PolicyTranslationModelTorch(nn.Module):
         in_transformer = inpt_features.repeat(self.model_setup['plan_nn']['plan']['seq_len'], 1, 1)
         if (self.plan_nn is None):
             model_setup = self.model_setup['plan_nn']['plan']
-            model_setup['ntoken'] = inpt_features.size(-1)
+            #self.plan_embedding = torch.nn.Linear(inpt_features.size(-1), 50).to(in_transformer.device)
             #self.plan_nn = TransformerUpConv(model_setup).to(inpt_features.device)
+            model_setup['ntoken'] = inpt_features.size(-1)
             self.plan_nn = TransformerModel(model_setup=self.model_setup['plan_nn']['plan']).to(inpt_features.device)
         plan = self.plan_nn.forward(in_transformer) #350x16x8
         #print(f'plan sape: {plan.shape}')
