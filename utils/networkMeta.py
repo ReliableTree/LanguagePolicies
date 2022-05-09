@@ -306,7 +306,7 @@ class NetworkMeta(nn.Module):
                 pass
                 #self.model.load_state_dict(self.model_state_dict)
             num_exp = 20
-            if mean_success > 0.1:
+            if mean_success > 0.5:
                 self.trajectories = torch.cat((self.trajectories, trajectories[:num_exp]), dim=0)[-30000:]
                 self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs[:num_exp]), dim=0)[-30000:]
                 self.success = torch.cat((self.success, success[:num_exp]), dim=0)[-30000:]
@@ -416,7 +416,7 @@ class NetworkMeta(nn.Module):
 
 
 
-            self.createGraphsMW(d_in=1, d_out=label, result=trj, toy=True, inpt=inpt, name=name, opt_trj=opt_trj)
+            self.createGraphsMW(d_in=1, d_out=label, result=trj, toy=True, inpt=inpt, name=name, opt_trj=opt_trj, window=self.successSimulation.window)
 
     def step(self, d_in, d_out, train, model_params):
 
@@ -546,7 +546,7 @@ class NetworkMeta(nn.Module):
         self.tboard.plotDMPTrajectory(target_trj, gen_tr_trj, torch.zeros_like(gen_tr_trj),
                                     gen_tr_phase, delta_t, None, stepid=self.global_step, save=save, name_plot=name_plot, path=path_to_plots)
         
-    def createGraphsMW(self, d_in, d_out, result, save = False, name_plot = '', epoch = 0, model_params={}, toy=True, inpt=None, name='Trajectory', opt_trj = None):
+    def createGraphsMW(self, d_in, d_out, result, save = False, name_plot = '', epoch = 0, model_params={}, toy=True, inpt=None, name='Trajectory', opt_trj = None, window = 0):
         target_trj  = d_out
         gen_trj = result
         
@@ -561,7 +561,7 @@ class NetworkMeta(nn.Module):
         #gen_tr_phase = self.tf2torch(tf.math.reduce_mean(self.torch2tf(phase), axis=0))
         self.tboard.plotDMPTrajectory(target_trj, gen_trj, torch.zeros_like(gen_trj),
                                     None, None, None, stepid=self.global_step, save=save, name_plot=name_plot, path=path_to_plots,\
-                                        tol_neg=tol_neg, tol_pos=tol_pos, inpt = inpt, name=name, opt_gen_trj = opt_trj)
+                                        tol_neg=tol_neg, tol_pos=tol_pos, inpt = inpt, name=name, opt_gen_trj = opt_trj, window=window)
         
 
     def saveNetworkToFile(self, add, data_path):

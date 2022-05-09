@@ -3,7 +3,7 @@
 from pickle import NONE
 from urllib.parse import non_hierarchical
 import matplotlib
-matplotlib.use("TkAgg")
+#matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
@@ -15,6 +15,9 @@ import sklearn
 import sklearn.preprocessing
 from utils.intprim.gaussian_model import GaussianModel
 import os
+import sys
+sys.path.append('/home/hendrik/Documents/master_project/Code/metaworld/')
+from searchTest.toyEnvironment import make_sliding_tol
 
 class TBoardGraphsTorch():
     def __init__(self, logname= None, data_path = None):
@@ -206,7 +209,7 @@ class TBoardGraphsTorch():
 
     def plotDMPTrajectory(self, y_true, y_pred, y_pred_std = None, phase= None, \
         dt= None, p_dt= None, stepid= None, name = "Trajectory", save = False, \
-            name_plot = None, path=None, tol_neg = None, tol_pos=None, inpt = None, opt_gen_trj=None):
+            name_plot = None, path=None, tol_neg = None, tol_pos=None, inpt = None, opt_gen_trj=None, window = 0):
         tf_y_true = self.torch2tf(y_true)
         tf_y_pred = self.torch2tf(y_pred)
         tf_phase = self.torch2tf(phase)
@@ -238,14 +241,23 @@ class TBoardGraphsTorch():
             ax[idx,idy].clear()
 
             # GT Trajectory:
+            if tol_neg is not None:
+                if window > 0:
+                    neg_inpt, pos_inpt, tf_y_true = make_sliding_tol(label=y_true.unsqueeze(0), neg_tol=tol_neg, pos_tol=tol_pos, window=window)
+                    tf_y_true = tf_y_true[0].detach().cpu().numpy()
+                    trj_len      = tf_y_true.shape[0]
+                    tf_y_pred = y_pred[int(window/2):-(int(window/2) + 1)].detach().cpu().numpy()
+                    neg_inpt = neg_inpt.detach().cpu().numpy()
+                    pos_inpt = pos_inpt.detach().cpu().numpy()
+                    if opt_gen_trj is not None:
+                        tf_opt_gen_trj = opt_gen_trj[int(window/2):-(int(window/2) + 1)].detach().cpu().numpy()
+                else:
+                    neg_inpt = tf_y_true[:,sp] + tol_neg[sp].cpu().numpy()
+                    pos_inpt = tf_y_true[:,sp] + tol_pos[sp].cpu().numpy()
+                ax[idx,idy].plot(range(tf_y_pred.shape[0]), neg_inpt[:,sp], alpha=0.75, color='orangered')
+                ax[idx,idy].plot(range(tf_y_pred.shape[0]), pos_inpt[:,sp], alpha=0.75, color='orangered')
             ax[idx,idy].plot(range(trj_len), tf_y_true[:,sp],   alpha=1.0, color='forestgreen')            
             ax[idx,idy].plot(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], alpha=0.75, color='mediumslateblue')
-            if tol_neg is not None:
-                neg_inpt = tf_y_true[:,sp] + tol_neg[sp].cpu().numpy()
-                pos_inpt = tf_y_true[:,sp] + tol_pos[sp].cpu().numpy()
-
-                ax[idx,idy].plot(range(tf_y_pred.shape[0]), neg_inpt, alpha=0.75, color='orangered')
-                ax[idx,idy].plot(range(tf_y_pred.shape[0]), pos_inpt, alpha=0.75, color='orangered')
             if opt_gen_trj is not None:
                 ax[idx,idy].plot(range(tf_y_pred.shape[0]), tf_opt_gen_trj[:,sp], alpha=0.75, color='lightseagreen')
                 diff_vec = tf_opt_gen_trj - tf_y_pred
