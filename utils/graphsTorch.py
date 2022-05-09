@@ -1,6 +1,7 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
 from pickle import NONE
+from urllib.parse import non_hierarchical
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -205,7 +206,7 @@ class TBoardGraphsTorch():
 
     def plotDMPTrajectory(self, y_true, y_pred, y_pred_std = None, phase= None, \
         dt= None, p_dt= None, stepid= None, name = "Trajectory", save = False, \
-            name_plot = None, path=None, tol_neg = None, tol_pos=None, inpt = None):
+            name_plot = None, path=None, tol_neg = None, tol_pos=None, inpt = None, opt_gen_trj=None):
         tf_y_true = self.torch2tf(y_true)
         tf_y_pred = self.torch2tf(y_pred)
         tf_phase = self.torch2tf(phase)
@@ -213,6 +214,9 @@ class TBoardGraphsTorch():
         if p_dt is not None:
             tf_dt = self.torch2tf(dt)
             tf_p_dt = self.torch2tf(p_dt)
+        if opt_gen_trj is not None:
+            tf_opt_gen_trj = self.torch2tf(opt_gen_trj)
+            tf_opt_gen_trj = tf_opt_gen_trj.numpy()
 
         tf_y_true      = tf_y_true.numpy()
         tf_y_pred      = tf_y_pred.numpy()
@@ -242,6 +246,10 @@ class TBoardGraphsTorch():
 
                 ax[idx,idy].plot(range(tf_y_pred.shape[0]), neg_inpt, alpha=0.75, color='orangered')
                 ax[idx,idy].plot(range(tf_y_pred.shape[0]), pos_inpt, alpha=0.75, color='orangered')
+            if opt_gen_trj is not None:
+                ax[idx,idy].plot(range(tf_y_pred.shape[0]), tf_opt_gen_trj[:,sp], alpha=0.75, color='lightseagreen')
+                diff_vec = tf_opt_gen_trj - tf_y_pred
+                ax[idx,idy].plot(range(tf_y_pred.shape[0]), diff_vec[:,sp], alpha=0.75, color='pink')
 
             #ax[idx,idy].errorbar(range(tf_y_pred.shape[0]), tf_y_pred[:,sp], xerr=None, yerr=None, alpha=0.25, fmt='none', color='mediumslateblue')
             #ax[idx,idy].set_ylim([-0.1, 1.1])
