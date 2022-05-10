@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from utils.Transformer import TransformerModel
+from LanguagePolicies.utils.Transformer import TransformerModel
 
 
 class TransformerAttention(nn.Module):

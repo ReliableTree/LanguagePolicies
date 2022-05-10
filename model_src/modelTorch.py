@@ -4,27 +4,17 @@ import pickle
 from readline import set_completion_display_matches_hook
 from numpy.core.fromnumeric import mean
 import tensorflow as tf
-import numpy as np
 import pathlib
 
-from tensorflow.python.eager.context import device
+from LanguagePolicies.model_src.attentionTorch import TopDownAttentionTorch
+from LanguagePolicies.model_src.glove import GloveEmbeddings
+from LanguagePolicies.model_src.transformerAttention import TransformerAttention
 
-from model_src.attention import TopDownAttention
-from model_src.attentionTorch import TopDownAttentionTorch
-from model_src.glove import GloveEmbeddings
-from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
-from model_src.controllerTransformer import ControllerTransformer
-from model_src.transformerAttention import TransformerAttention
-from model_src.planNetwork import Plan_NN
-from model_src.transformerUpConv import TransformerUpConv
-
-from utils.Transformer import TransformerModel
-from utils.Transformer import generate_square_subsequent_mask
-from utils.torch_util import dmp_dt_torch
+from LanguagePolicies.utils.Transformer import TransformerModel
+from LanguagePolicies.utils.Transformer import generate_square_subsequent_mask
 
 import torch
 import torch.nn as nn
-import time
 
 from os import path, makedirs
 

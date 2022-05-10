@@ -1,26 +1,18 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
 from __future__ import absolute_import, division, print_function, unicode_literals
-from math import exp
 from os import name, path, makedirs
-from pickle import NONE
-from pickletools import read_uint1
-from tabnanny import verbose
-from tkinter.messagebox import NO
-from turtle import pos
-from unittest.mock import NonCallableMagicMock
-from xmlrpc.client import ExpatParser
 import tensorflow as tf
 import sys
 import numpy as np
-from utils.graphsTorch import TBoardGraphsTorch
-from utilsMW.metaOptimizer import SignalModule, TaylorSignalModule, meta_optimizer, tailor_optimizer, MetaModule
-from utilsMW.dataLoaderMW import TorchDatasetTailor
-from torch.utils.data import DataLoader
+from LanguagePolicies.utils.graphsTorch import TBoardGraphsTorch
+from MetaWorld.utilsMW.metaOptimizer import SignalModule, TaylorSignalModule, meta_optimizer, tailor_optimizer, MetaModule
+from MetaWorld.utilsMW.dataLoaderMW import TorchDatasetTailor
 
 import torch
 import torch.nn as nn
-import time
+from torch.utils.data import DataLoader
+
 import copy
 
 class NetworkMeta(nn.Module):
@@ -306,7 +298,7 @@ class NetworkMeta(nn.Module):
                 pass
                 #self.model.load_state_dict(self.model_state_dict)
             num_exp = 20
-            if mean_success > 0.5:
+            if mean_success > 1:
                 self.trajectories = torch.cat((self.trajectories, trajectories[:num_exp]), dim=0)[-30000:]
                 self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs[:num_exp]), dim=0)[-30000:]
                 self.success = torch.cat((self.success, success[:num_exp]), dim=0)[-30000:]
@@ -341,40 +333,41 @@ class NetworkMeta(nn.Module):
             #print(d_in)
             #self.model.eval()
             
-            if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
+            if not quick:
+                if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
 
-                self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=success, name = 'success')
+                    self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=success, name = 'success')
 
-                fail = ~success
-                fail_opt = ~success_opt
-                self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=fail, name = 'fail')
+                    fail = ~success
+                    fail_opt = ~success_opt
+                    self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=fail, name = 'fail')
 
-                fail_to_success = success_opt & fail
-                self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=fail_to_success, name = 'fail to success', opt_trj=trajectories_opt)
+                    fail_to_success = success_opt & fail
+                    self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=fail_to_success, name = 'fail to success', opt_trj=trajectories_opt)
 
-                success_to_fail = success & fail_opt
-                self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=success_to_fail, name = 'success to fail', opt_trj=trajectories_opt)
-                
-                fail_to_fail = fail & fail_opt
-                self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=fail_to_fail, name = 'fail to fail', opt_trj=trajectories_opt)
+                    success_to_fail = success & fail_opt
+                    self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=success_to_fail, name = 'success to fail', opt_trj=trajectories_opt)
+                    
+                    fail_to_fail = fail & fail_opt
+                    self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=fail_to_fail, name = 'fail to fail', opt_trj=trajectories_opt)
 
-                
-                #print(f'label-check: {label[success_to_fail][0]}')
-                #print(f'label-opt-check: {label_opt[success_to_fail][0]}')
+                    
+                    #print(f'label-check: {label[success_to_fail][0]}')
+                    #print(f'label-opt-check: {label_opt[success_to_fail][0]}')
 
-            else:
-                in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
-                in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
-                in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
-                d_in_graphs  = (in0, in1, in2)
-                out_model = self.model(d_in_graphs)
-                self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
-                                (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
-                                out_model,
-                                save=save,
-                                name_plot = str(step),
-                                epoch=epoch,
-                                model_params=model_params)
+                else:
+                    in0 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[0][0]), 0),[do_dim,1]))
+                    in1 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[1][0]), 0),[do_dim,1,1]))
+                    in2 = self.tf2torch(tf.tile(tf.expand_dims(self.torch2tf(d_in[2][0]), 0),[do_dim,1,1]))
+                    d_in_graphs  = (in0, in1, in2)
+                    out_model = self.model(d_in_graphs)
+                    self.createGraphs((d_in[0][0], d_in[1][0], d_in[2][0]),
+                                    (d_out[0][0], d_out[1][0], d_out[2][0], d_out[3][0]), 
+                                    out_model,
+                                    save=save,
+                                    name_plot = str(step),
+                                    epoch=epoch,
+                                    model_params=model_params)
 
             #self.model.train()
 
