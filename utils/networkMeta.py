@@ -157,7 +157,7 @@ class NetworkMeta(nn.Module):
             if not self.init_train:
                 loss_module = 1
                 #self.reset_tailor_models()
-                while loss_module > 0.2:
+                while loss_module > 0.03:
                     lmp = None
                     lmn = None
                     for succ, failed in self.tailor_loader:
@@ -297,16 +297,17 @@ class NetworkMeta(nn.Module):
             else:
                 pass
                 #self.model.load_state_dict(self.model_state_dict)
-            num_exp = 20
-            if mean_success > 1:
+            num_exp = 10
+            if mean_success > 0:
                 self.trajectories = torch.cat((self.trajectories, trajectories[:num_exp]), dim=0)[-30000:]
                 self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs[:num_exp]), dim=0)[-30000:]
                 self.success = torch.cat((self.success, success[:num_exp]), dim=0)[-30000:]
 
-                '''self.trajectories = torch.cat((self.trajectories, trajectories_opt), dim=0)[-30000:]
-                self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs_opt), dim=0)[-30000:]
-                self.success = torch.cat((self.success, success_opt), dim=0)[-30000:]'''
+                self.trajectories = torch.cat((self.trajectories, trajectories_opt[:num_exp]), dim=0)[-30000:]
+                self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs_opt[:num_exp]), dim=0)[-30000:]
+                self.success = torch.cat((self.success, success_opt[:num_exp]), dim=0)[-30000:]
                 print(f'num examples: {len(self.success)}')
+                self.write_tboard_scalar({'num examples':torch.tensor(len(self.success)-10000)}, train=False)
                 tailor_data = TorchDatasetTailor(trajectories= self.trajectories, obsv=self.inpt_obs, success=self.success)
                 self.tailor_loader = DataLoader(tailor_data, batch_size=32, shuffle=True)
                 self.init_train = False

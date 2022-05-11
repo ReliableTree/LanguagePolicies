@@ -242,7 +242,6 @@ class TBoardGraphsTorch():
         else:
             neg_inpt = tf_y_true + tol_neg[None,:].cpu().numpy()
             pos_inpt = tf_y_true + tol_pos[None,:].cpu().numpy()
-            print(f'in else: {pos_inpt.shape}')
         for sp in range(len(tf_y_true[0])):
             idx = sp // 3
             idy = sp  % 3
