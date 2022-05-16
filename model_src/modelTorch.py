@@ -134,6 +134,7 @@ class PolicyTranslationModelTorch(nn.Module):
         
         current_plan = current_plan.transpose(0,1) #16x350x8
         result['gen_trj'] = current_plan
+        result['inpt_trj'] = current_plan
         '''result['gen_trj'] = current_plan[:,:,:-1]
         result['phs']     = current_plan[:,:,-1]'''
         return result

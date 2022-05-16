@@ -23,7 +23,7 @@ class TBoardGraphsTorch():
             print(f'log dir: {self.logdir + "train/"}')
             self.__tboard_train      = tf.summary.create_file_writer(self.logdir + "train/")
             self.__tboard_validation = tf.summary.create_file_writer(self.logdir + "validate/")
-            self.voice               = Voice(path=data_path)
+            #self.voice               = Voice(path=data_path)
         self.fig, self.ax = plt.subplots(3,3)
 
     def startDebugger(self):
