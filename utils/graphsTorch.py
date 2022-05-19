@@ -230,18 +230,19 @@ class TBoardGraphsTorch():
         #fig, ax = plt.subplots(3,3)
         fig, ax = self.fig, self.ax
         #fig.set_size_inches(9, 9)
-        if window > 0:
-            neg_inpt, pos_inpt, tf_y_true = make_sliding_tol(label=y_true.unsqueeze(0), neg_tol=tol_neg, pos_tol=tol_pos, window=window)
-            tf_y_true = tf_y_true[0].detach().cpu().numpy()
-            trj_len      = tf_y_true.shape[0]
-            tf_y_pred = y_pred[int(window/2):-(int(window/2) + 1)].detach().cpu().numpy()
-            neg_inpt = neg_inpt.detach().cpu().numpy()
-            pos_inpt = pos_inpt.detach().cpu().numpy()
-            if opt_gen_trj is not None:
-                tf_opt_gen_trj = opt_gen_trj[int(window/2):-(int(window/2) + 1)].detach().cpu().numpy()
-        else:
-            neg_inpt = tf_y_true + tol_neg[None,:].cpu().numpy()
-            pos_inpt = tf_y_true + tol_pos[None,:].cpu().numpy()
+        if tol_neg is not None:
+            if window > 0:
+                neg_inpt, pos_inpt, tf_y_true = make_sliding_tol(label=y_true.unsqueeze(0), neg_tol=tol_neg, pos_tol=tol_pos, window=window)
+                tf_y_true = tf_y_true[0].detach().cpu().numpy()
+                trj_len      = tf_y_true.shape[0]
+                tf_y_pred = y_pred[int(window/2):-(int(window/2) + 1)].detach().cpu().numpy()
+                neg_inpt = neg_inpt.detach().cpu().numpy()
+                pos_inpt = pos_inpt.detach().cpu().numpy()
+                if opt_gen_trj is not None:
+                    tf_opt_gen_trj = opt_gen_trj[int(window/2):-(int(window/2) + 1)].detach().cpu().numpy()
+            else:
+                neg_inpt = tf_y_true + tol_neg[None,:].cpu().numpy()
+                pos_inpt = tf_y_true + tol_pos[None,:].cpu().numpy()
         for sp in range(len(tf_y_true[0])):
             idx = sp // 3
             idy = sp  % 3
@@ -249,7 +250,6 @@ class TBoardGraphsTorch():
 
             # GT Trajectory:
             if tol_neg is not None:
-
                 ax[idx,idy].plot(range(tf_y_pred.shape[0]), neg_inpt[:,sp], alpha=0.75, color='orangered')
                 ax[idx,idy].plot(range(tf_y_pred.shape[0]), pos_inpt[:,sp], alpha=0.75, color='orangered')
             ax[idx,idy].plot(range(trj_len), tf_y_true[:,sp],   alpha=1.0, color='forestgreen')            

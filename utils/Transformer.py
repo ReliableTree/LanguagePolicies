@@ -65,12 +65,13 @@ class TailorTransformer(TransformerModel):
             self.to(src.device)
             self.super_init = True
 
-
         #src: batch, seq, dim
         src = src.transpose(0,1)
+
         #src = seq, batch, dim
         #print(f'src shape: {src.shape}')
         pre_result = super().forward(src)
+
         pre_result = pre_result.transpose(0,1)
 
         #preresult = batch, seq, dim

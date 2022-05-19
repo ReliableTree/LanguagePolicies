@@ -35,7 +35,7 @@ class NetworkMeta(nn.Module):
         self.env_tag = env_tag
         self.init_train = True
         self.max_success_rate = 0
-        self.max_step_disc = 2000
+        self.max_step_disc = 12000
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -68,6 +68,8 @@ class NetworkMeta(nn.Module):
         self.inpt_obs= None
         self.success= None
 
+        self.last_mean_success = 0
+
         self.best_improved_success = 0
 
 
@@ -76,16 +78,22 @@ class NetworkMeta(nn.Module):
             for step, (d_in, d_out) in enumerate(self.train_ds):
                 result = self.model(inputs=d_in)
                 break
-        self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
+        self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 40, self.gamma_sl, verbose=True)
         #self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 40, 0.9, verbose=True)
 
         self.signal_main = SignalModule(model=self.model, loss_fct=self.calculateLoss)
         policy = self.model
-        envs = self.successSimulation.get_env(n=2)
-        trajectories, inpt_obs, label, success, ftrj = self.successSimulation.get_success(policy = policy, envs=envs)
+        gt_policy_success = False
+        while not gt_policy_success:
+            envs = self.successSimulation.get_env(n=2, env_tag = self.env_tag)
+            result = self.successSimulation.get_success(policy = policy, envs=envs)
+            if result is not False:
+                trajectories, inpt_obs, label, success, ftrj = result
+                gt_policy_success = True
+                
         inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
-        inpt = torch.concat((trajectories, ftrj, inpt_obs), dim = -1)
+        inpt = torch.concat((trajectories, inpt_obs), dim = -1)
         self.tailor_setup_inpt = inpt
         #inpt = inpt.transpose(0,1)
         with torch.no_grad():
@@ -102,7 +110,7 @@ class NetworkMeta(nn.Module):
         for i in range(len(self.tailor_models)):
             self.tailor_modules.append(TaylorSignalModule(model=self.tailor_models[i], loss_fct=lfp, lr = self.mlr, mlr = self.mlr))
         self.model_state_dict = self.model.state_dict()
-        self.meta_module = MetaModule(main_signal = self.signal_main, tailor_signal=self.tailor_modules[0], lr = self.mo_lr, writer = self.write_tboard_scalar)
+        self.meta_module = MetaModule(main_signal = self.signal_main, tailor_signal=self.tailor_modules[0], lr = self.mo_lr, writer = self.write_tboard_scalar, device=inpt.device)
         self.setTailorDataset()
         for tm in self.tailor_modules:
             tm.init_model(inpt = self.tailor_setup_inpt)
@@ -115,15 +123,21 @@ class NetworkMeta(nn.Module):
             self.tailor_models[i] = copy.deepcopy(self.init_tailor_models[i])
 '''
     def setTailorDataset(self):
+
         policy = self.meta_module
         policy.tailor_signal.model.eval()
         policy.return_mode = 1
-        envs = self.successSimulation.get_env(n=2)
-        trajectories, inpt_obs, label, success, ftrjs = self.successSimulation.get_success(policy = policy, envs=envs)
+        gt_policy_success = False
+        while not gt_policy_success:
+            envs = self.successSimulation.get_env(n=2, env_tag = self.env_tag)
+            result = self.successSimulation.get_success(policy = policy, envs=envs)
+            if result is not False:
+                trajectories, inpt_obs, label, success, ftrj = result
+                gt_policy_success = True
         self.trajectories = trajectories
         self.inpt_obs = inpt_obs
         self.success = success
-        self.ftrj = ftrjs
+        self.ftrj = ftrj
         for step, (d_in, d_out) in enumerate(self.train_ds):
             self.inpt_obs = torch.cat((self.inpt_obs, d_in[:,:1]), dim = 0)
             self.trajectories = torch.cat((self.trajectories, d_out))
@@ -142,6 +156,8 @@ class NetworkMeta(nn.Module):
     def setDatasets(self, train_loader, val_loader):
         self.train_ds = train_loader
         self.val_ds   = val_loader
+        
+
 
 
     def train_tailor(self, ):
@@ -152,14 +168,16 @@ class NetworkMeta(nn.Module):
 
 
     def train(self, epochs, model_params):
-
+        self.expert_examples_len = len(self.train_ds.dataset)
+        print(f'inital num examples: {self.expert_examples_len}')
         self.global_step = 0
         self.runValidation(quick=False, model_params=model_params)
         disc_epoch = 0
         for epoch in range(epochs):
-            '''if (epoch+1)% model_params['val_every'] == 0:
+            if (epoch+1)% model_params['val_every'] == 0 or True:
+                complete = (epoch+1)%10 == 0
                 print(f'logname: {self.logname}')
-                self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params)'''
+                self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params, complete=True)
 
             self.model.reset_memory()
             rel_epoch = epoch/epochs
@@ -169,7 +187,7 @@ class NetworkMeta(nn.Module):
             model_params['obj_embedding']['train_embedding']  = rel_epoch < 1.1
             #print(f'train embedding: {model_params["obj_embedding"]["train_embedding"]}')
             self.model.model_setup['train'] = True
-            if not self.init_train:
+            if not self.init_train or True:
                 self.tailor_modules[0].model.train()
                 '''for tm in self.tailor_modules:
                     tm.init_model(inpt = self.tailor_setup_inpt)'''
@@ -177,10 +195,11 @@ class NetworkMeta(nn.Module):
                 #self.reset_tailor_models()
                 disc_step = 0
                 disc_epoch += 1
-                while loss_module > 0.001 and disc_step < self.max_step_disc:
+                while loss_module > 0.01 and disc_step < self.max_step_disc:
                     lmp = None
                     lmn = None
                     for succ, failed in self.tailor_loader:
+
                         disc_step += 1
                         self.global_step += 1
                         debug_dict = self.tailor_step(succ, failed)
@@ -193,12 +212,14 @@ class NetworkMeta(nn.Module):
 
                         loss_module = torch.maximum(lmp, lmn).mean()
                     
-                    debug_dict = self.runvalidationTaylor()
+                    #debug_dict = self.runvalidationTaylor()
                     debug_dict['tailor module loss'] = loss_module
                     self.write_tboard_scalar(debug_dict=debug_dict, train=True)
                 if disc_step > self.max_step_disc and disc_epoch >= 10:
                     self.max_step_disc *= 1.3
                     disc_epoch = 0
+                    for tm in self.tailor_modules:
+                        tm.init_model(inpt = self.tailor_setup_inpt)
 
                     '''if disc_step > self.max_step_disc or disc_epoch > 10:
                         disc_epoch = 0
@@ -208,21 +229,19 @@ class NetworkMeta(nn.Module):
                         for tm in self.tailor_modules:
                             tm.init_model(inpt = self.tailor_setup_inpt)'''
 
-                self.runValidation(quick=False, model_params=model_params)
+            if self.init_train and False:
+                for step, (d_in, d_out) in enumerate(self.train_ds):
+                    #print(f'inpt shape: {d_in.shape}')
+                    if (step) % 400 == 0:
+                        validation_loss = self.runValidation(quick=True, epoch=epoch)   
+                        self.model.model_setup['train'] = True     
+                    train_loss.append(self.step(d_in, d_out, train=True, model_params=model_params))
+                    self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
+                    if epoch == 0:
+                        self.total_steps += 1
+                    self.global_step += 1
 
-
-            '''for step, (d_in, d_out) in enumerate(self.train_ds):
-                #print(f'inpt shape: {d_in.shape}')
-                if (step+1) % 400 == 0:
-                    validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)   
-                    self.model.model_setup['train'] = True     
-                train_loss.append(self.step(d_in, d_out, train=True, model_params=model_params))
-                self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
-                if epoch == 0:
-                    self.total_steps += 1
-                self.global_step += 1
-
-            self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)'''
+                self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
            #self.train_tailor()
             
 
@@ -249,7 +268,7 @@ class NetworkMeta(nn.Module):
         else:
             return None
 
-    def runvalidationTaylor(self, debug_dict={}, return_mode = 0):
+    def runvalidationTaylor(self, debug_dict={}, return_mode = 0, num_exp = 2):
         self.tailor_modules[0].model.eval()
 
         policy = self.meta_module
@@ -257,14 +276,19 @@ class NetworkMeta(nn.Module):
             policy.return_mode = return_mode
         else:
             policy.return_mode = 0
-        envs = self.successSimulation.get_env(n=40)
-        trajectories, inpt_obs, label, success, ftrjs = self.successSimulation.get_success(policy = policy, envs=envs)    
+        gt_policy_success = False
+        while not gt_policy_success:
+            envs = self.successSimulation.get_env(n=num_exp, env_tag = self.env_tag)
+            result = self.successSimulation.get_success(policy = policy, envs=envs)
+            if result is not False:
+                trajectories, inpt_obs, label, success, ftrj = result
+                gt_policy_success = True
+
         if return_mode == 2:
             trajectories = label
             success = torch.ones_like(success)
         fail = ~success
-        taylor_inpt = {'result':trajectories, 'inpt':inpt_obs, 'original':ftrjs}
-
+        taylor_inpt = {'result':trajectories, 'inpt':inpt_obs, 'original':ftrj}
         expected_success = policy.tailor_signal.forward(taylor_inpt)
         #expected_success = self.tailor_modules[0].forward(taylor_inpt)
 
@@ -276,6 +300,8 @@ class NetworkMeta(nn.Module):
         fail = fail.type(torch.float).reshape(-1)
         success = success.type(torch.float).reshape(-1)
         tp = (expected_success * success)[success==1].mean()
+        if success.sum() == 0:
+            tp = torch.tensor(0)
         fp = (expected_success * fail)[fail==1].mean()
         tn = (expected_fail * fail)[fail==1].mean()
         fn = (expected_fail * success)[success==1].mean()
@@ -296,27 +322,47 @@ class NetworkMeta(nn.Module):
 
         return debug_dict
 
-    def runValidation(self, quick=False, pnt=True, epoch = 0, save = False, model_params = {}): 
+    def runValidation(self, quick=False, pnt=True, epoch = 0, save = False, model_params = {}, complete = False): 
         self.tailor_modules[0].model.eval()
         model_params = copy.deepcopy(model_params) #dont change model params globally
         self.model.model_setup['train'] = False
         #with torch.no_grad():
         if (not quick):
+            if complete:
+                num_envs = 2000
+            else:
+                num_envs = 2000
             #torch.manual_seed(1)
             print("Running full validation...")
-            self.meta_module.optim_run += 1
-            debug_dict = self.runvalidationTaylor()
-            num_examples = len(self.success)-10000
-            self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
-            debug_dict = self.runvalidationTaylor(return_mode=1)
-            self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
-            debug_dict = self.runvalidationTaylor(return_mode=2)
+            num_examples = len(self.success)
+            if complete:
+                print('complete:')
+                self.meta_module.optim_run += 1
+                debug_dict = self.runvalidationTaylor(num_exp=num_envs)
+                self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
+                debug_dict = self.runvalidationTaylor(return_mode=1, num_exp=num_envs)
+
+                #tailor_success_optimized = debug_dict['true positive optimized']
+                self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
+                debug_dict = self.runvalidationTaylor(return_mode=2, num_exp=num_envs)
+                self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
 
             policy = self.meta_module
             policy.main_signal.model.eval()
+            policy.tailor_signal.model.eval()
             policy.return_mode = 0
-            envs = self.successSimulation.get_env(n=4000)
-            trajectories, inpt_obs, label, success, ftrjs = self.successSimulation.get_success(policy = policy, envs=envs)
+            gt_policy_success = False
+            print('before while')
+            while not gt_policy_success:
+                envs = self.successSimulation.get_env(n=num_envs, env_tag = self.env_tag)
+                result = self.successSimulation.get_success(policy = policy, envs=envs)
+                if result is not False:
+                    print('asd')
+                    trajectories, inpt_obs, label, success, ftrj = result
+                    gt_policy_success = True
+                else:
+                    print('vvvv')
+            print(f'num envs: {len(envs)}')
             fail = ~success
             mean_success = success.type(torch.float).mean()
             print(f'mean success before: {mean_success}')
@@ -325,7 +371,21 @@ class NetworkMeta(nn.Module):
             policy.return_mode = 1
             trajectories_opt, inpt_obs_opt, label_opt, success_opt, ftrjs_opt = self.successSimulation.get_success(policy = policy, envs=envs)
             fail_opt = ~success_opt
-            mean_success_opt = success_opt.type(torch.float).mean()
+            if len(success_opt)>0:
+                mean_success_opt = success_opt.type(torch.float).mean()
+            else:
+                mean_success_opt = 0
+            if mean_success_opt > self.last_mean_success:
+                policy.max_steps = policy.max_steps * 1.1
+                self.last_mean_success = mean_success_opt
+            
+            '''if tailor_success_optimized * 0.8 > mean_success_opt:
+                policy.max_steps = policy.max_steps * 1.1
+            elif tailor_success_optimized < mean_success_opt:
+                policy.max_steps = max(policy.max_steps * 0.9, 5)'''
+
+            self.write_tboard_scalar({'num optimisation steps':torch.tensor(policy.max_steps)}, train= False)
+
             print(f'mean success after: {mean_success_opt}')
             debug_dict['success rate optimized'] = mean_success_opt
             debug_dict['improved success rate'] = mean_success_opt - mean_success
@@ -338,21 +398,21 @@ class NetworkMeta(nn.Module):
             debug_dict['rel number improved'] = num_improved
             debug_dict['rel number failed'] = num_deproved
 
-            self.write_tboard_scalar(debug_dict=debug_dict, train=False, step = num_examples)
+            self.write_tboard_scalar(debug_dict=debug_dict, train=not complete, step = self.global_step)
         
             if mean_success > self.max_success_rate:
                 self.max_success_rate = mean_success
             else:
                 pass
                 #self.model.load_state_dict(self.model_state_dict)
-            num_exp = 10
-            if mean_success > 0:
+            num_exp = 1
+            if (mean_success >= 0.0 and complete):
                 fail = ~success
                 fail_opt = ~success_opt
-                self.trajectories = torch.cat((self.trajectories, trajectories[:num_exp]), dim=0)[-30000:]
+                '''self.trajectories = torch.cat((self.trajectories, trajectories[:num_exp]), dim=0)[-30000:]
                 self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs[:num_exp]), dim=0)[-30000:]
                 self.success = torch.cat((self.success, success[:num_exp]), dim=0)[-30000:]
-                self.ftrj = torch.cat((self.ftrj, ftrjs[:num_exp]))
+                self.ftrj = torch.cat((self.ftrj, ftrjs[:num_exp]))'''
 
                 self.trajectories = torch.cat((self.trajectories, trajectories_opt[:num_exp]), dim=0)[-30000:]
                 self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs_opt[:num_exp]), dim=0)[-30000:]
@@ -362,7 +422,7 @@ class NetworkMeta(nn.Module):
                 print(f'num examples: {len(self.success)}')
                 self.write_tboard_scalar({'num examples':torch.tensor(len(self.success)-10000)}, train=False)
                 tailor_data = TorchDatasetTailor(trajectories= self.trajectories, obsv=self.inpt_obs, success=self.success, ftrj = self.ftrj)
-                self.tailor_loader = DataLoader(tailor_data, batch_size=400, shuffle=True)
+                self.tailor_loader = DataLoader(tailor_data, batch_size=20, shuffle=True)
                 self.init_train = False
 
             '''if mean_success > 0.1:
@@ -460,9 +520,6 @@ class NetworkMeta(nn.Module):
             inpt = inpt[mask][0,0]
             if opt_trj is not None:
                 opt_trj = opt_trj[mask][0]
-
-
-
             self.createGraphsMW(d_in=1, d_out=label, result=trj, toy=True, inpt=inpt, name=name, opt_trj=opt_trj, window=self.successSimulation.window)
 
     def step(self, d_in, d_out, train, model_params):
