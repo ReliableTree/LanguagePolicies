@@ -10,7 +10,7 @@ from LanguagePolicies.model_src.attentionTorch import TopDownAttentionTorch
 from LanguagePolicies.model_src.glove import GloveEmbeddings
 from LanguagePolicies.model_src.transformerAttention import TransformerAttention
 
-from LanguagePolicies.utils.Transformer import TransformerModel
+from LanguagePolicies.utils.Transformer import TransformerModel, TransformerDecoder
 from LanguagePolicies.utils.Transformer import generate_square_subsequent_mask
 
 import torch
@@ -130,9 +130,9 @@ class PolicyTranslationModelTorch(nn.Module):
             result['atn']     = self.obj_atn
             result['diff']    = diff
 
+        
         current_plan = self.get_plan(inpt_features) #350x16x8
         
-        current_plan = current_plan.transpose(0,1) #16x350x8
         result['gen_trj'] = current_plan
         result['inpt_trj'] = current_plan
         '''result['gen_trj'] = current_plan[:,:,:-1]
@@ -270,7 +270,7 @@ class PolicyTranslationModelTorch(nn.Module):
             #self.plan_nn = TransformerUpConv(model_setup).to(inpt_features.device)
             model_setup['ntoken'] = inpt_features.size(-1)
             self.plan_nn = TransformerModel(model_setup=self.model_setup['plan_nn']['plan']).to(inpt_features.device)
-        plan = self.plan_nn.forward(in_transformer) #350x16x8
+        plan = self.plan_nn.forward(in_transformer) #350x16x50
         #print(f'plan sape: {plan.shape}')
 
         #smooth_plan = self.smoothing(plan.transpose(0,2)).transpose(0,2)

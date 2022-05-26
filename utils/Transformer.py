@@ -1,4 +1,5 @@
 import math
+from turtle import forward
 from typing import Tuple
 
 import torch
@@ -14,7 +15,7 @@ class TransformerModel(nn.Module):
         self.model_type = 'Transformer'
         if model_setup is not None:
             ntoken = model_setup['ntoken']
-            d_output = model_setup['d_output']
+            #d_output = model_setup['d_output']
             d_model = model_setup['d_model']
             nhead = model_setup['nhead']
             d_hid = model_setup['d_hid']
@@ -24,7 +25,7 @@ class TransformerModel(nn.Module):
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.encoder = nn.Linear(ntoken, d_model)
         self.d_model = d_model
-        self.decoder = nn.Linear(d_model, d_output)
+        #self.decoder = nn.Linear(d_model, d_output)
 
         #self.init_weights()
 
@@ -46,8 +47,32 @@ class TransformerModel(nn.Module):
         src = self.encoder(src) * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, src_mask)
-        output = self.decoder(output)
+        #output = self.decoder(output)
         return output
+
+class TransformerDecoder(nn.Module):
+    def __init__(self, model_setup) -> None:
+        super().__init__()
+        self.d_output = model_setup['d_output']
+        self.super_init = False
+        self.output_seq = model_setup['output_seq']
+
+    def forward(self, inpt):
+        #inpt N,S,D
+        if not self.super_init:
+            if self.output_seq:
+                self.decoder = nn.Linear(inpt.size(-1), self.d_output)
+            else:
+                self.decoder = nn.Linear(inpt.size(-1)*inpt.size(-2), self.d_output)
+            self.decoder.to(inpt.device)
+
+        if not self.output_seq:
+            inpt_dec = inpt.reshape(inpt.size(0), -1)
+        else:
+            inpt_dec = inpt
+        output = self.decoder(inpt_dec)
+        return output
+
 
 class TailorTransformer(TransformerModel):
     def __init__(self, ntoken=0, d_output=0, d_model=0, nhead=0, d_hid=0, nlayers=0, dropout=0.2, model_setup=None):
@@ -61,7 +86,9 @@ class TailorTransformer(TransformerModel):
             self.model_setup['seq_len'] = src.size(1)
             super().__init__(model_setup = self.model_setup)
             self.result_encoder = nn.Linear(self.model_setup['d_output'] * self.model_setup['seq_len'], self.model_setup['d_result'])
-            self.sm = torch.nn.Softmax(dim=-1)
+            #self.sm = torch.nn.Softmax(dim=-1)
+            self.sig = torch.nn.Sigmoid()
+            self.ReLU = torch.nn.ReLU()
             self.to(src.device)
             self.super_init = True
 
@@ -78,8 +105,8 @@ class TailorTransformer(TransformerModel):
         pre_result = pre_result.reshape(pre_result.size(0), -1)
         #print(f'preresult shape {pre_result.shape}')
 
-        result = self.result_encoder(pre_result)
-        result = self.sm(result)
+        result = self.ReLU(self.result_encoder(pre_result)) 
+        #result = (self.sig(result) + 1) /2
         #print(f'result shape {result.shape}')
 
         return result

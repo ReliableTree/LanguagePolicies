@@ -2,12 +2,14 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 from os import name, path, makedirs
+from tkinter.messagebox import NO
 import tensorflow as tf
 import sys
 import numpy as np
 from LanguagePolicies.utils.graphsTorch import TBoardGraphsTorch
 from MetaWorld.utilsMW.metaOptimizer import SignalModule, TaylorSignalModule, meta_optimizer, tailor_optimizer, MetaModule
 from MetaWorld.utilsMW.dataLoaderMW import TorchDatasetTailor
+from LanguagePolicies.utils.Transformer import TailorTransformer
 
 import torch
 import torch.nn as nn
@@ -17,11 +19,12 @@ import copy
 import os
 
 class NetworkMeta(nn.Module):
-    def __init__(self, model, tailor_models, env_tag, successSimulation, data_path, logname, lr, mlr, mo_lr, lw_atn, lw_w, lw_trj, lw_gen_trj, lw_dt, lw_phs, lw_fod, log_freq=25, gamma_sl = 0.995, device = 'cuda', use_transformer = True, tboard=True):
+    def __init__(self, model, plan_encoder, tailor_models, env_tag, successSimulation, data_path, logname, lr, mlr, mo_lr, lw_atn, lw_w, lw_trj, lw_gen_trj, lw_dt, lw_phs, lw_fod, log_freq=25, gamma_sl = 0.995, device = 'cuda', use_transformer = True, tboard=True):
         super().__init__()
         self.optimizer         = None
         self.model             = model
-        self.tailor_models      = torch.nn.ModuleList(tailor_models)
+        self.plan_encoder      = plan_encoder
+        self.tailor_models     = tailor_models
         self.total_steps       = 0
         self.logname           = logname
         self.lr = lr
@@ -35,7 +38,7 @@ class NetworkMeta(nn.Module):
         self.env_tag = env_tag
         self.init_train = True
         self.max_success_rate = 0
-        self.max_step_disc = 12000
+        self.max_step_disc = 15000
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -74,31 +77,37 @@ class NetworkMeta(nn.Module):
 
 
     def setup_model(self, model_params):
+        self.model_params = model_params
         with torch.no_grad():
             for step, (d_in, d_out) in enumerate(self.train_ds):
-                result = self.model(inputs=d_in)
+                inpt = self.cat_obs_trj(d_in, d_out.size())
+                plan = self.model(inputs=inpt)
+                result = self.plan_encoder(plan['gen_trj'])
                 break
         self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 40, self.gamma_sl, verbose=True)
+
+        self.plan_encoder_optimizer = torch.optim.AdamW(params=self.plan_encoder.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
         #self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 40, 0.9, verbose=True)
 
         self.signal_main = SignalModule(model=self.model, loss_fct=self.calculateLoss)
         policy = self.model
         gt_policy_success = False
-        while not gt_policy_success:
+        '''while not gt_policy_success:
             envs = self.successSimulation.get_env(n=2, env_tag = self.env_tag)
             result = self.successSimulation.get_success(policy = policy, envs=envs)
             if result is not False:
                 trajectories, inpt_obs, label, success, ftrj = result
-                gt_policy_success = True
+                gt_policy_success = True'''
                 
-        inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
-        inpt = torch.concat((trajectories, inpt_obs), dim = -1)
-        self.tailor_setup_inpt = inpt
+        #inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
+        #inpt = torch.concat((trajectories, inpt_obs), dim = -1)
+
+        self.tailor_setup_inpt = plan['gen_trj']
         #inpt = inpt.transpose(0,1)
         with torch.no_grad():
             for tmodel in self.tailor_models:
-                t_result = tmodel.forward(inpt)
+                t_result = tmodel.forward(plan['gen_trj'])
         #self.tailor_optimizers = [torch.optim.Adam(params=tailor_model.parameters(), lr=self.mlr) for tailor_model in self.tailor_models]
         #self.meta_optimizers = [torch.optim.Adam(params=tailor_model.parameters(), lr=self.mlr) for tailor_model in self.tailor_models]
         #self.tailor_optimizers = [torch.optim.SGD(params=tailor_model.parameters(), lr=self.lr) for tailor_model in self.tailor_models]
@@ -106,13 +115,13 @@ class NetworkMeta(nn.Module):
         
         def lfp(result, label):
             return ((result.reshape(-1)-label.reshape(-1))**2).mean()
+        self.lfp = lfp
         self.tailor_modules = []
-        self.meta_module = []
         for i in range(len(self.tailor_models)):
-            self.tailor_modules.append(TaylorSignalModule(model=self.tailor_models[i], loss_fct=lfp, lr = self.mlr, mlr = self.mlr))
+            self.tailor_modules.append(TaylorSignalModule(model=self.tailor_models[i], loss_fct=self.lfp, lr = self.mlr, mlr = self.mlr))
         self.model_state_dict = self.model.state_dict()
                 
-        self.meta_module = MetaModule(main_signal = self.signal_main, tailor_signals=self.tailor_modules, lr = self.mo_lr, writer = self.write_tboard_scalar, device=inpt.device)
+        self.meta_module = MetaModule(main_signal = self.signal_main, tailor_signals=self.tailor_modules, lr = self.mo_lr, writer = self.write_tboard_scalar, device=t_result.device)
 
         self.setTailorDataset()
         for tm in self.tailor_modules:
@@ -178,6 +187,9 @@ class NetworkMeta(nn.Module):
         self.global_step = 0
         #self.runValidation(quick=False, model_params=model_params)
         disc_epoch = 0
+        #epoch = 0
+        #self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params, complete=True)
+
         for epoch in range(epochs):
 
             self.model.reset_memory()
@@ -199,35 +211,57 @@ class NetworkMeta(nn.Module):
                 disc_step = 0
                 disc_epoch += 1
                 reinit = 0
-                while loss_module > 0.01 and disc_step < self.max_step_disc and reinit < 1:
+                while loss_module > 0.01 and disc_step < self.max_step_disc and reinit < 1 and disc_step < 1:
                     lmp = None
                     lmn = None
                     for succ, failed in self.tailor_loader:
-
                         disc_step += 1
                         self.global_step += 1
-                        debug_dict = self.tailor_step(succ, failed)
+                        plan_loss, p_debug_dict, s_plans = self.model_step(succ)
+                        _, _, f_plans = self.model_step(failed)
+                        succ_inpt = (s_plans, succ[2])
+                        fail_inpt = (f_plans, failed[2])
+                        tailor_loss, t_debug_dict = self.tailor_step(succ_inpt, fail_inpt)
+                        loss = tailor_loss + plan_loss
+                        self.optimizer.zero_grad()
+                        self.plan_encoder_optimizer.zero_grad()
+                        self.meta_module.zero_grad()
+                        loss.backward()
+                        self.optimizer.step()
+                        self.plan_encoder_optimizer.step()
+                        self.meta_module.step()
                         if lmp is None:
-                            lmp = debug_dict['tailor loss positive'].reshape(1)
-                            lmn = debug_dict['tailor loss positive'].reshape(1)
+                            lmp = t_debug_dict['tailor loss positive'].reshape(1)
+                            lmn = t_debug_dict['tailor loss positive'].reshape(1)
                         else:
-                            lmp = torch.cat((lmp, debug_dict['tailor loss positive'].reshape(1)), 0)
-                            lmn = torch.cat((lmn, debug_dict['tailor loss negative'].reshape(1)), 0)
+                            lmp = torch.cat((lmp, t_debug_dict['tailor loss positive'].reshape(1)), 0)
+                            lmn = torch.cat((lmn, t_debug_dict['tailor loss negative'].reshape(1)), 0)
 
                         loss_module = torch.maximum(lmp, lmn).mean()
                     
                     #debug_dict = self.runvalidationTaylor()
-                    debug_dict['tailor module loss'] = loss_module
-                    self.write_tboard_scalar(debug_dict=debug_dict, train=True)
-                    if (disc_step > self.max_step_disc and disc_epoch >= 10):
+                        t_debug_dict['tailor module loss'] = loss_module
+                        self.write_tboard_scalar(debug_dict=t_debug_dict, train=True)
+                        self.write_tboard_scalar(debug_dict=p_debug_dict, train=True)
+                    
+                    if (disc_step >= self.max_step_disc):
                         self.max_step_disc *= 1.3
+                        disc_step = 0
                         disc_epoch = 0
-                        if debug_dict['tailor loss negative'] > debug_dict['tailor loss positive']:
-                            tm_worst = debug_dict['tailor loss negative max']
+                        if 'tailor loss negative' in t_debug_dict:
+                            if t_debug_dict['tailor loss negative'] > t_debug_dict['tailor loss positive']:
+                                
+                                tm_worst = t_debug_dict['tailor loss negative max']
+                            else:
+                                tm_worst = t_debug_dict['tailor loss positive max']
                         else:
-                            tm_worst = debug_dict['tailor loss positive max']
+                            tm_worst = 0
 
                         self.tailor_modules[int(tm_worst)].init_model(inpt = self.tailor_setup_inpt)
+                        #tailor_models=[TailorTransformer(model_setup=self.model_params['tailor_transformer']) for i in range(1)]
+                        #self.tailor_modules = []
+                        #for i in range(len(tailor_models)):
+                        #    self.tailor_modules.append(TaylorSignalModule(model=self.tailor_models[i], loss_fct=self.lfp, lr = self.mlr, mlr = self.mlr))
                         reinit += 1
                         #tm.init_model(inpt = self.tailor_setup_inpt)
 
@@ -238,9 +272,10 @@ class NetworkMeta(nn.Module):
                         disc_step = 0
                         for tm in self.tailor_modules:
                             tm.init_model(inpt = self.tailor_setup_inpt)'''
+                        
             
 
-            if self.init_train or True:
+            if self.init_train and False:
                 self.model.train()
                 for step, (d_in, d_out) in enumerate(self.train_ds):
                     #print(f'inpt shape: {d_in.shape}')
@@ -255,7 +290,7 @@ class NetworkMeta(nn.Module):
 
                 self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
             if (epoch+1)% model_params['val_every'] == 0:
-                complete = (epoch+1)%(5*model_params['val_every']) == 0
+                complete = (epoch+1)%(1*model_params['val_every']) == 0
                 print(f'logname: {self.logname}')
                 self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params, complete=complete)
            #self.train_tailor()
@@ -269,9 +304,24 @@ class NetworkMeta(nn.Module):
     
     
     def tailor_step(self, succ, failed):
-        debug_dict = tailor_optimizer(tailor_modules = self.tailor_modules, succ=succ, failed=failed)
+        loss, debug_dict = tailor_optimizer(tailor_modules = self.tailor_modules, succ=succ, failed=failed)
         self.write_tboard_scalar(debug_dict=debug_dict, train=True)
-        return debug_dict
+        return loss, debug_dict
+
+    def model_step(self, succ):
+        obsv = succ[1]
+        d_out = succ[0]
+        inpt1 = torch.cat((obsv.repeat(1,d_out)))
+        plan = self.model(obsv)
+        result = self.plan_encoder(plan)
+        loss, debug_dict = self.calculateLoss(d_out, result)
+        return loss, debug_dict, result
+
+    def cat_obs_trj(self, obs, trj):
+        if type(trj) is torch.tensor:
+            return torch.cat((obs.repeat(1, trj.size(1), 1), trj), dim=-1)
+        else:
+            return torch.cat((obs.repeat(1, trj[1], 1), torch.zeros(size=trj, device=obs.device)), dim=-1)
     
     def torch2tf(self, inpt):
         if inpt is not None:
@@ -309,7 +359,8 @@ class NetworkMeta(nn.Module):
             expected_success = ts.forward(taylor_inpt)
             #expected_success = self.tailor_modules[0].forward(taylor_inpt)
 
-            expected_success = expected_success.max(dim=-1)[1].reshape(-1).type(torch.bool)
+            #expected_success = expected_success.max(dim=-1)[1].reshape(-1).type(torch.bool)
+            expected_success = (expected_success > 0.5).type(torch.bool)
             expected_fail = ~ expected_success
             expected_success = expected_success.type(torch.float)
             expected_fail = expected_fail.type(torch.float)
@@ -347,9 +398,9 @@ class NetworkMeta(nn.Module):
         #with torch.no_grad():
         if (not quick):
             if complete:
-                num_envs = 20
+                num_envs = 1000
             else:
-                num_envs = 10
+                num_envs = 1000
             #torch.manual_seed(1)
             print("Running full validation...")
             num_examples = len(self.success)
@@ -546,7 +597,7 @@ class NetworkMeta(nn.Module):
         if train:
             if self.init_train or True:
                 result = self.model(d_in)
-                loss, debug_dict = self.calculateLoss(d_out, result, model_params)
+                loss, debug_dict = self.calculateLoss(d_out, result)
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
@@ -567,7 +618,7 @@ class NetworkMeta(nn.Module):
         else:
             with torch.no_grad():
                 result = self.model(d_in)
-                loss, debug_dict = self.calculateLoss(d_out=d_out, result=result, model_params=model_params)
+                loss, debug_dict = self.calculateLoss(d_out=d_out, result=result)
             
 
             if self.last_written_step != self.global_step:
@@ -609,7 +660,7 @@ class NetworkMeta(nn.Module):
     def calcMSE(self, a, b):
         return ((a.squeeze() - b.squeeze())**2).mean()
 
-    def calculateLoss(self, d_out, result, model_params, prefix = ''):
+    def calculateLoss(self, d_out, result, prefix = ''):
         if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
             generated = d_out
         else:
