@@ -201,7 +201,7 @@ class PolicyTranslationModelTorch(nn.Module):
             else:
                 print('load')
                 language = self.find_closest_match(language)'''
-        
+        #
         return language.squeeze() 
 
     def get_max_features(self, features, gt_attention = None):
@@ -270,7 +270,7 @@ class PolicyTranslationModelTorch(nn.Module):
             #self.plan_nn = TransformerUpConv(model_setup).to(inpt_features.device)
             model_setup['ntoken'] = inpt_features.size(-1)
             self.plan_nn = TransformerModel(model_setup=self.model_setup['plan_nn']['plan']).to(inpt_features.device)
-        print(in_transformer)
+        #print(in_transformer)
         plan = self.plan_nn.forward(in_transformer) #350x16x8
         #print(f'plan sape: {plan.shape}')
 
