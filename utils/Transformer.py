@@ -62,6 +62,7 @@ class TailorTransformer(TransformerModel):
             super().__init__(model_setup = self.model_setup)
             self.result_encoder = nn.Linear(self.model_setup['d_output'] * self.model_setup['seq_len'], self.model_setup['d_result'])
             self.sm = torch.nn.Softmax(dim=-1)
+            self.relu = torch.nn.ReLU()
             self.to(src.device)
             self.super_init = True
 
@@ -79,7 +80,8 @@ class TailorTransformer(TransformerModel):
         #print(f'preresult shape {pre_result.shape}')
 
         result = self.result_encoder(pre_result)
-        result = self.sm(result)
+        result = self.relu(result)
+        #result = self.sm(result)
         #print(f'result shape {result.shape}')
 
         return result

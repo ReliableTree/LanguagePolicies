@@ -35,7 +35,7 @@ class NetworkMeta(nn.Module):
         self.env_tag = env_tag
         self.init_train = True
         self.max_success_rate = 0
-        self.max_step_disc = 12000
+        self.max_step_disc = 3000
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -240,7 +240,7 @@ class NetworkMeta(nn.Module):
                             tm.init_model(inpt = self.tailor_setup_inpt)'''
             
 
-            if self.init_train or True:
+            if self.init_train and False:
                 self.model.train()
                 for step, (d_in, d_out) in enumerate(self.train_ds):
                     #print(f'inpt shape: {d_in.shape}')
@@ -255,7 +255,7 @@ class NetworkMeta(nn.Module):
 
                 self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
             if (epoch+1)% model_params['val_every'] == 0:
-                complete = (epoch+1)%(5*model_params['val_every']) == 0
+                complete = (epoch+1)%(1*model_params['val_every']) == 0
                 print(f'logname: {self.logname}')
                 self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params, complete=complete)
            #self.train_tailor()
@@ -309,7 +309,8 @@ class NetworkMeta(nn.Module):
             expected_success = ts.forward(taylor_inpt)
             #expected_success = self.tailor_modules[0].forward(taylor_inpt)
 
-            expected_success = expected_success.max(dim=-1)[1].reshape(-1).type(torch.bool)
+            #expected_success = expected_success.max(dim=-1)[1].reshape(-1).type(torch.bool)
+            expected_success = (expected_success > 0.5).type(torch.bool)
             expected_fail = ~ expected_success
             expected_success = expected_success.type(torch.float)
             expected_fail = expected_fail.type(torch.float)
@@ -347,9 +348,9 @@ class NetworkMeta(nn.Module):
         #with torch.no_grad():
         if (not quick):
             if complete:
-                num_envs = 20
+                num_envs = 1000
             else:
-                num_envs = 10
+                num_envs = 1000
             #torch.manual_seed(1)
             print("Running full validation...")
             num_examples = len(self.success)
