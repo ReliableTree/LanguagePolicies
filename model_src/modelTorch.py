@@ -111,7 +111,7 @@ class PolicyTranslationModelTorch(nn.Module):
         result = {}
         ###
         if 'meta_world' in self.model_setup and self.model_setup['meta_world']['use']:
-            inpt_features = inputs[:,:1].transpose(0,1)
+            inpt_features = inputs.transpose(0,1)
         else:
             seq_len = 350
             language_in   = inputs[0]
@@ -263,19 +263,20 @@ class PolicyTranslationModelTorch(nn.Module):
         return smoothed.reshape([*shape])
 
     def get_plan(self, inpt_features):
-        in_transformer = inpt_features.repeat(self.model_setup['plan_nn']['plan']['seq_len'], 1, 1)
+        #in_transformer = inpt_features.repeat(self.model_setup['plan_nn']['plan']['seq_len'], 1, 1)
         if (self.plan_nn is None):
             model_setup = self.model_setup['plan_nn']['plan']
             #self.plan_embedding = torch.nn.Linear(inpt_features.size(-1), 50).to(in_transformer.device)
             #self.plan_nn = TransformerUpConv(model_setup).to(inpt_features.device)
             model_setup['ntoken'] = inpt_features.size(-1)
-            self.plan_nn = TransformerModel(model_setup=self.model_setup['plan_nn']['plan']).to(inpt_features.device)
-        plan = self.plan_nn.forward(in_transformer) #350x16x50
+            self.plan_nn = TransformerModel(model_setup=model_setup).to(inpt_features.device)
+        print(inpt_features.shape)
+        plan = self.plan_nn.forward(inpt_features) #350x16x50
         #print(f'plan sape: {plan.shape}')
 
         #smooth_plan = self.smoothing(plan.transpose(0,2)).transpose(0,2)
         #print(f'smooth plan shape: {smooth_plan.shape}')
-        return plan
+        return plan.transpose(0,1)
     
 
     def getVariables(self, step=None):

@@ -20,12 +20,13 @@ class TransformerModel(nn.Module):
             nhead = model_setup['nhead']
             d_hid = model_setup['d_hid']
             nlayers = model_setup['nlayers']
+            d_output = 4
         self.pos_encoder = PositionalEncoding(d_model, dropout)
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.encoder = nn.Linear(ntoken, d_model)
         self.d_model = d_model
-        #self.decoder = nn.Linear(d_model, d_output)
+        self.decoder = nn.Linear(d_model, d_output)
 
         #self.init_weights()
 
@@ -44,10 +45,13 @@ class TransformerModel(nn.Module):
         Returns:
             output Tensor of shape [seq_len, batch_size, ntoken]
         """
+        #print(src[:,0])
         src = self.encoder(src) * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, src_mask)
-        #output = self.decoder(output)
+        #print(output[:,0])
+        #print('______________________')
+        output = self.decoder(output)
         return output
 
 class TransformerDecoder(nn.Module):
@@ -68,10 +72,13 @@ class TransformerDecoder(nn.Module):
 
         if not self.output_seq:
             inpt_dec = inpt.reshape(inpt.size(0), -1)
+            output = self.decoder(inpt_dec)
+            output = output.reshape(-1)
         else:
             inpt_dec = inpt
-        output = self.decoder(inpt_dec)
-        return output
+            output = self.decoder(inpt_dec)
+        
+        return inpt
 
 
 class TailorTransformer(TransformerModel):
