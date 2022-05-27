@@ -188,7 +188,7 @@ class NetworkMeta(nn.Module):
             model_params['obj_embedding']['train_embedding']  = rel_epoch < 1.1
             #print(f'train embedding: {model_params["obj_embedding"]["train_embedding"]}')
             self.model.model_setup['train'] = True
-            if not self.init_train or True:
+            if not self.init_train and False:
                 self.meta_module.train()
                 self.model.eval()
                 #self.tailor_modules[0].model.train()
@@ -240,7 +240,7 @@ class NetworkMeta(nn.Module):
                             tm.init_model(inpt = self.tailor_setup_inpt)'''
             
 
-            if self.init_train and False:
+            if self.init_train or True:
                 self.model.train()
                 for step, (d_in, d_out) in enumerate(self.train_ds):
                     #print(f'inpt shape: {d_in.shape}')
