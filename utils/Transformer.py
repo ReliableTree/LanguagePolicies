@@ -51,7 +51,7 @@ class TransformerModel(nn.Module):
         output = self.transformer_encoder(src, src_mask)
         #print(output[:,0])
         #print('______________________')
-        output = self.decoder(output)
+        #output = self.decoder(output)
         return output
 
 class TransformerDecoder(nn.Module):
@@ -69,6 +69,7 @@ class TransformerDecoder(nn.Module):
             else:
                 self.decoder = nn.Linear(inpt.size(-1)*inpt.size(-2), self.d_output)
             self.decoder.to(inpt.device)
+            self.super_init = True
 
         if not self.output_seq:
             inpt_dec = inpt.reshape(inpt.size(0), -1)
@@ -78,7 +79,7 @@ class TransformerDecoder(nn.Module):
             inpt_dec = inpt
             output = self.decoder(inpt_dec)
         
-        return inpt
+        return output
 
 
 class TailorTransformer(TransformerModel):

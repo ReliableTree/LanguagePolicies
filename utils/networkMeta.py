@@ -1,6 +1,7 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 
 from __future__ import absolute_import, division, print_function, unicode_literals
+from cProfile import label
 from os import name, path, makedirs
 from tkinter.messagebox import NO
 import tensorflow as tf
@@ -44,7 +45,7 @@ class NetworkMeta(nn.Module):
         self.env_tag = env_tag
         self.init_train = True
         self.max_success_rate = 0
-        self.max_step_disc = 15000
+        self.max_step_disc = 5000
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -90,10 +91,10 @@ class NetworkMeta(nn.Module):
                 plan = self.model(inputs=inpt)
                 result = self.plan_decoder(plan['gen_trj'])
                 break
-        self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
+        self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=0)#1e-3) 
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 40, self.gamma_sl, verbose=True)
 
-        self.plan_decoder_optimizer = torch.optim.AdamW(params=self.plan_decoder.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
+        self.plan_decoder_optimizer = torch.optim.AdamW(params=self.plan_decoder.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=0)#1e-3) 
         #self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 40, 0.9, verbose=True)
 
         self.signal_main = SignalModule(model=self.model, loss_fct=self.calculateLoss)
@@ -218,29 +219,45 @@ class NetworkMeta(nn.Module):
                 disc_step = 0
                 disc_epoch += 1
                 reinit = 0
-                while loss_module > 0.01 and disc_step < self.max_step_disc and reinit < 1 and disc_step < 1:
+                plan_loss = 1
+                while plan_loss > 0.05:# and disc_step < self.max_step_disc and reinit < 1 and disc_step < 1:
                     lmp = None
                     lmn = None
                     train_loss = None
                     for succ, failed in self.tailor_loader:
-                        disc_step += 1
+                        
                         self.global_step += 1
-                        plan_loss, p_debug_dict, s_plans = self.model_step(succ)
-                        _, _, f_plans = self.model_step(failed)
-                        succ_inpt = (s_plans, succ[2])
-                        fail_inpt = (f_plans, failed[2])
-                        #tailor_loss, t_debug_dict = self.tailor_step(succ_inpt, fail_inpt)
-                        loss = plan_loss# + tailor_loss
-                        self.optimizer.zero_grad()
-                        self.plan_decoder_optimizer.zero_grad()
-                        self.meta_module.zero_grad()
-                        loss.backward()
-                        #print(self.model.plan_nn.encoder.bias.grad[0])
-                        #print(self.model.plan_nn.encoder.bias[0])
-                        #print(list(self.optimizer.param_groups)[0]['params'][0].grad)
-                        self.optimizer.step()
-                        self.plan_decoder_optimizer.step()
-                        self.meta_module.step()
+                        
+                        loss_module = 10
+                        plan_loss, p_debug_dict = self.model_step(succ)
+                        plan_loss = plan_loss.detach()
+                        while loss_module > plan_loss and disc_step < self.max_step_disc:
+                            disc_step += 1
+                            s_plans = self.get_plan(succ)
+                            f_plans = self.get_plan(failed)
+                            succ_inpt = (s_plans, succ[2])
+                            fail_inpt = (f_plans, failed[2])
+                            tailor_loss, t_debug_dict = self.tailor_step(succ_inpt, fail_inpt)
+                            self.optimizer.zero_grad()
+                            self.plan_decoder_optimizer.zero_grad()
+                            self.meta_module.zero_grad()
+                            #tailor_loss = tailor_loss
+                            tailor_loss.backward()
+                            #print(next(self.model.parameters()).grad)
+                            self.optimizer.step()
+                            self.meta_module.step()
+                            self.global_step += 1
+                            self.write_tboard_scalar(t_debug_dict, train=True)
+                            if lmp is None:
+                                    lmp = t_debug_dict['tailor loss positive'].reshape(1)
+                                    lmn = t_debug_dict['tailor loss positive'].reshape(1)
+                            else:
+                                lmp = torch.cat((lmp, t_debug_dict['tailor loss positive'].reshape(1)), 0)
+                                lmn = torch.cat((lmn, t_debug_dict['tailor loss negative'].reshape(1)), 0)
+                            loss_module = torch.maximum(lmp, lmn).mean()
+                        #loss = plan_loss
+                        plan_loss, p_debug_dict = self.model_step(succ)
+                        #self.meta_module.step()
                         #print(self.model.plan_nn.encoder.bias[0])
                         #print(1/0)
                         '''if lmp is None:
@@ -252,23 +269,24 @@ class NetworkMeta(nn.Module):
 
                         #loss_module = torch.maximum(lmp, lmn).mean()
                         if train_loss is None:
-                            train_loss = plan_loss.detach().unsqueeze(0)
+                            train_loss = plan_loss.unsqueeze(0)
                         else:
-                            train_loss = torch.cat((train_loss, plan_loss.detach().unsqueeze(0)), dim=0)
+                            train_loss = torch.cat((train_loss, plan_loss.unsqueeze(0)), dim=0)
 
-                    
+                        #p_debug_dict.update(t_debug_dict)
                         #debug_dict = self.runvalidationTaylor()
                         #t_debug_dict['tailor module loss'] = loss_module
                         #self.write_tboard_scalar(debug_dict=t_debug_dict, train=True)
                         self.write_tboard_scalar(debug_dict=p_debug_dict, train=True)
 
-                        self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(train_loss.mean()), end=False)
+                        #self.loadingBar(disc_step, self.total_steps, 25, addition="Loss: {:.6f}".format(train_loss.mean()), end=False)
                         if epoch == 0:
                             self.total_steps += 1
                         self.global_step += 1
+                    print(f'loss: {train_loss.mean()}')
+                    #self.loadingBar(disc_step, self.total_steps, 25, addition="Loss: {:.6f}".format(train_loss.mean()), end=True)
 
-
-                    if (disc_step >= self.max_step_disc) and False:
+                    if (disc_step >= self.max_step_disc):
                         self.max_step_disc *= 1.3
                         disc_step = 0
                         disc_epoch = 0
@@ -282,6 +300,7 @@ class NetworkMeta(nn.Module):
                             tm_worst = 0
 
                         self.tailor_modules[int(tm_worst)].init_model(inpt = self.tailor_setup_inpt)
+                        self.setup_model(self.model_params)
                         #tailor_models=[TailorTransformer(model_setup=self.model_params['tailor_transformer']) for i in range(1)]
                         #self.tailor_modules = []
                         #for i in range(len(tailor_models)):
@@ -323,7 +342,7 @@ class NetworkMeta(nn.Module):
 
             if self.use_tboard:
                 self.saveNetworkToFile(add = self.logname + "/", data_path = self.data_path)
-            self.scheduler.step()
+            #self.scheduler.step()
 
     
     
@@ -333,28 +352,40 @@ class NetworkMeta(nn.Module):
         return loss, debug_dict
 
     def model_step(self, succ):
-        obsv = succ[1]
         d_out = succ[0]
-        inpt1 = cat_obs_trj(obsv, d_out.size())
-        #print(f'inpt: {inpt1[0]}')
-        plan1 = self.model(inpt1)['gen_trj']
-        #trj1 = self.plan_decoder(plan1)
-        loss = (plan1-d_out)**2
-        #print(loss.shape)
-        loss = loss.mean()*self.lr
-        #loss1, debug_dict = self.calculateLoss(d_out, plan1)
-        '''inpt2 = cat_obs_trj(obsv, trj1.detach())
+        obsv = succ[1]
+        plan1 = self.get_plan(succ=succ)
+        trj1 = self.plan_decoder.forward(plan1)
+        loss1, debug_dict = self.calculateLoss(trj1, d_out)
+        self.optimizer.zero_grad()
+        self.plan_decoder_optimizer.zero_grad()
+        self.meta_module.zero_grad()
+        loss1.backward()
+        self.optimizer.step()
+        self.plan_decoder_optimizer.step()
+        inpt2 = cat_obs_trj(obsv, trj1.detach())
         plan2 = self.model(inpt2)['gen_trj']
         trj2 = self.plan_decoder(plan2)
-        print('________________________________________----')
-        print(d_out.size())
-        print(trj2.size())
-        loss2, debug_dict2 = self.calculateLoss(d_out, trj2)'''
-        #loss = loss1
-        #debug_dict.update(debug_dict2)
-        debug_dict = {}
-        return loss, debug_dict, plan1
-    
+        if self.global_step % 1000 == 0:
+            print('___________________________________________________________________')
+            self.createGraphsMW(d_in=1, d_out=d_out[0], result=trj1[0], toy=True, inpt=obsv[0,0], name='over fit', opt_trj=trj2[0], window=self.successSimulation.window)
+        loss2, debug_dict2 = self.calculateLoss(trj2, d_out)
+        self.optimizer.zero_grad()
+        self.plan_decoder_optimizer.zero_grad()
+        self.meta_module.zero_grad()
+        loss2.backward()
+        self.optimizer.step()
+        self.plan_decoder_optimizer.step()
+        debug_dict.update(debug_dict2)
+        return loss1.detach() + loss2.detach(), debug_dict
+
+    def get_plan(self, succ):
+        obsv = succ[1]
+        d_out = succ[0]
+        inpt = cat_obs_trj(obsv, d_out.size())
+        plan = self.model(inpt)['gen_trj']
+        return plan
+
     def torch2tf(self, inpt):
         if inpt is not None:
             return tf.convert_to_tensor(inpt.detach().cpu().numpy())
@@ -367,7 +398,6 @@ class NetworkMeta(nn.Module):
             return None
 
     def runvalidationTaylor(self, debug_dict={}, return_mode = 0, num_exp = 2):
-        return {}
         self.meta_module.eval()
         self.model.eval()
         policy = self.meta_module
@@ -507,14 +537,14 @@ class NetworkMeta(nn.Module):
             else:
                 pass
                 #self.model.load_state_dict(self.model_state_dict)
-            num_exp = 10
+            num_exp = 5
             if (mean_success >= 0.0 and complete) or True:
                 fail = ~success
                 fail_opt = ~success_opt
-                '''self.trajectories = torch.cat((self.trajectories, trajectories[:num_exp]), dim=0)[-30000:]
+                self.trajectories = torch.cat((self.trajectories, trajectories[:num_exp]), dim=0)[-30000:]
                 self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs[:num_exp]), dim=0)[-30000:]
                 self.success = torch.cat((self.success, success[:num_exp]), dim=0)[-30000:]
-                self.ftrj = torch.cat((self.ftrj, ftrjs[:num_exp]))'''
+                self.ftrj = torch.cat((self.ftrj, ftrj[:num_exp]))
 
                 self.trajectories = torch.cat((self.trajectories, trajectories_opt[:num_exp]), dim=0)[-30000:]
                 self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs_opt[:num_exp]), dim=0)[-30000:]
@@ -544,8 +574,8 @@ class NetworkMeta(nn.Module):
 
         val_loss = []
         for step, (d_in, d_out) in enumerate(self.val_ds):
-            plan_loss, p_debug_dict, s_plans  = self.model_step((d_out, d_in))
-            val_loss.append(plan_loss.detach())
+            plan_loss, p_debug_dict  = self.model_step((d_out, d_in))
+            val_loss.append(plan_loss)
             if quick or model_params['quick_val']:
                 break
 
@@ -626,7 +656,7 @@ class NetworkMeta(nn.Module):
             inpt = inpt[mask][0,0]
             if opt_trj is not None:
                 opt_trj = opt_trj[mask][0]
-            self.createGraphsMW(d_in=1, d_out=label, result=trj, toy=False, inpt=inpt, name=name, opt_trj=opt_trj, window=self.successSimulation.window)
+            self.createGraphsMW(d_in=1, d_out=label, result=trj, toy=True, inpt=inpt, name=name, opt_trj=opt_trj, window=self.successSimulation.window)
 
     def step(self, d_in, d_out, train, model_params):
 

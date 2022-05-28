@@ -270,7 +270,7 @@ class PolicyTranslationModelTorch(nn.Module):
             #self.plan_nn = TransformerUpConv(model_setup).to(inpt_features.device)
             model_setup['ntoken'] = inpt_features.size(-1)
             self.plan_nn = TransformerModel(model_setup=model_setup).to(inpt_features.device)
-        print(inpt_features.shape)
+        #print(inpt_features.shape)
         plan = self.plan_nn.forward(inpt_features) #350x16x50
         #print(f'plan sape: {plan.shape}')
 
