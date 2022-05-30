@@ -16,7 +16,7 @@ import sys
 parent_path = str(Path(__file__).parent.absolute())
 parent_path += '/../'
 sys.path.append(parent_path)
-from MetaWorld.utilsMW.utils import cat_obs_trj
+from MetaWorld.utilsMW.utils import cat_obs_trj, right_stack_obj_trj
 
 import torch
 import torch.nn as nn
@@ -128,11 +128,11 @@ class NetworkMeta(nn.Module):
             self.tailor_modules.append(TaylorSignalModule(model=self.tailor_models[i], loss_fct=self.lfp, lr = self.mlr, mlr = self.mlr))
         self.model_state_dict = self.model.state_dict()
                 
-        self.meta_module = MetaModule(main_signal = self.signal_main, tailor_signals=self.tailor_modules, plan_decoder= self.plan_decoder, lr = self.mo_lr, writer = self.write_tboard_scalar, device=t_result.device)
+        self.meta_module = MetaModule(main_signal = self.signal_main, tailor_signals=self.tailor_modules, plan_decoder= self.plan_decoder, trj_size=d_out.size(), lr = self.mo_lr, writer = self.write_tboard_scalar, device=t_result.device)
         self.setTailorDataset()
 
-        for tm in self.tailor_modules:
-            tm.init_model(inpt = self.tailor_setup_inpt)
+        '''for tm in self.tailor_modules:
+            tm.init_model(inpt = self.tailor_setup_inpt)'''
         '''self.init_tailor_models = []
         for i in range(len(self.tailor_models)):
             self.init_tailor_models.append(copy.deepcopy(self.tailor_models[i]))
@@ -158,7 +158,7 @@ class NetworkMeta(nn.Module):
         self.success = success
         self.ftrj = ftrj
         for step, (d_in, d_out) in enumerate(self.train_ds):
-            self.inpt_obs = torch.cat((self.inpt_obs, d_in[:,:1]), dim = 0)
+            self.inpt_obs = torch.cat((self.inpt_obs, d_in.squeeze()), dim = 0)
             self.trajectories = torch.cat((self.trajectories, d_out))
             self.ftrj = torch.cat((self.ftrj, d_out))
             self.success = torch.cat((self.success, torch.ones(d_in.size(0), device = d_in.device)))
@@ -228,7 +228,7 @@ class NetworkMeta(nn.Module):
                         
                         self.global_step += 1
                         
-                        loss_module = 10
+                        '''loss_module = 10
                         plan_loss, p_debug_dict = self.model_step(succ)
                         plan_loss = plan_loss.detach()
                         while loss_module > plan_loss and disc_step < self.max_step_disc:
@@ -254,7 +254,7 @@ class NetworkMeta(nn.Module):
                             else:
                                 lmp = torch.cat((lmp, t_debug_dict['tailor loss positive'].reshape(1)), 0)
                                 lmn = torch.cat((lmn, t_debug_dict['tailor loss negative'].reshape(1)), 0)
-                            loss_module = torch.maximum(lmp, lmn).mean()
+                            loss_module = torch.maximum(lmp, lmn).mean()'''
                         #loss = plan_loss
                         plan_loss, p_debug_dict = self.model_step(succ)
                         #self.meta_module.step()
@@ -286,7 +286,7 @@ class NetworkMeta(nn.Module):
                     print(f'loss: {train_loss.mean()}')
                     #self.loadingBar(disc_step, self.total_steps, 25, addition="Loss: {:.6f}".format(train_loss.mean()), end=True)
 
-                    if (disc_step >= self.max_step_disc):
+                    '''if (disc_step >= self.max_step_disc):
                         self.max_step_disc *= 1.3
                         disc_step = 0
                         disc_epoch = 0
@@ -305,7 +305,7 @@ class NetworkMeta(nn.Module):
                         #self.tailor_modules = []
                         #for i in range(len(tailor_models)):
                         #    self.tailor_modules.append(TaylorSignalModule(model=self.tailor_models[i], loss_fct=self.lfp, lr = self.mlr, mlr = self.mlr))
-                        reinit += 1
+                        reinit += 1'''
                         #tm.init_model(inpt = self.tailor_setup_inpt)
 
                     '''if disc_step > self.max_step_disc or disc_epoch > 10:
@@ -355,34 +355,47 @@ class NetworkMeta(nn.Module):
         d_out = succ[0]
         obsv = succ[1]
         plan1 = self.get_plan(succ=succ)
-        trj1 = self.plan_decoder.forward(plan1)
-        loss1, debug_dict = self.calculateLoss(trj1, d_out)
+        result1 = self.plan_decoder.forward(plan1)
+        trj1 = result1[:,:,:d_out.size(-1)]
+        trj_loss1, debug_dict = self.calculateLoss(trj1, d_out)
+        cont_loss1 = self.cont_loss(obsv, result1[:,-1,-obsv.size(-1):])
+        loss1 = trj_loss1 + cont_loss1
         self.optimizer.zero_grad()
         self.plan_decoder_optimizer.zero_grad()
         self.meta_module.zero_grad()
         loss1.backward()
         self.optimizer.step()
         self.plan_decoder_optimizer.step()
-        inpt2 = cat_obs_trj(obsv, trj1.detach())
+        debug_dict['cont loss 1'] = cont_loss1.detach()
+        
+        inpt2 = right_stack_obj_trj(obsv, result1.detach())
         plan2 = self.model(inpt2)['gen_trj']
-        trj2 = self.plan_decoder(plan2)
-        if self.global_step % 1000 == 0:
-            print('___________________________________________________________________')
-            self.createGraphsMW(d_in=1, d_out=d_out[0], result=trj1[0], toy=True, inpt=obsv[0,0], name='over fit', opt_trj=trj2[0], window=self.successSimulation.window)
-        loss2, debug_dict2 = self.calculateLoss(trj2, d_out)
+        result2 = self.plan_decoder.forward(plan2)
+        trj2 = result2[:,:,:d_out.size(-1)]
+        trj_loss2, debug_dict2 = self.calculateLoss(trj2, d_out)
+        cont_loss2 = self.cont_loss(obsv, result2[:,-1,-obsv.size(-1):])
+        loss2 = trj_loss2 + cont_loss2
         self.optimizer.zero_grad()
         self.plan_decoder_optimizer.zero_grad()
         self.meta_module.zero_grad()
         loss2.backward()
         self.optimizer.step()
         self.plan_decoder_optimizer.step()
+        debug_dict2['cont loss 2'] = cont_loss2.detach()
         debug_dict.update(debug_dict2)
+        if self.global_step % 1000 == 0:
+            self.createGraphsMW(d_in=1, d_out=d_out[0], result=trj1[0], toy=True, inpt=obsv[0,0], name='over fit', opt_trj=trj2[0], window=self.successSimulation.window)
         return loss1.detach() + loss2.detach(), debug_dict
+
+    def cont_loss(self, obvs, prediction):
+        return self.calcMSE(obvs, prediction)
+
 
     def get_plan(self, succ):
         obsv = succ[1]
         d_out = succ[0]
-        inpt = cat_obs_trj(obsv, d_out.size())
+        result_size = (d_out.size(0), d_out.size(1), d_out.size(2)+obsv.size(-1))
+        inpt = right_stack_obj_trj(obs=obsv, inpt=result_size)
         plan = self.model(inpt)['gen_trj']
         return plan
 
@@ -587,12 +600,13 @@ class NetworkMeta(nn.Module):
                 if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
 
                     self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=success, name = 'success')
-
                     fail = ~success
                     fail_opt = ~success_opt
                     self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=fail, name = 'fail')
 
                     fail_to_success = success_opt & fail
+                    
+                    
                     self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=fail_to_success, name = 'fail to success', opt_trj=trajectories_opt)
 
                     success_to_fail = success & fail_opt
@@ -653,7 +667,7 @@ class NetworkMeta(nn.Module):
         if mask.sum()>0:
             label = label[mask][0]
             trj = trj[mask][0]
-            inpt = inpt[mask][0,0]
+            inpt = inpt.squeeze()[mask][0]
             if opt_trj is not None:
                 opt_trj = opt_trj[mask][0]
             self.createGraphsMW(d_in=1, d_out=label, result=trj, toy=True, inpt=inpt, name=name, opt_trj=opt_trj, window=self.successSimulation.window)
