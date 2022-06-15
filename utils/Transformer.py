@@ -1,6 +1,7 @@
 import math
 from turtle import forward
 from typing import Tuple
+from importlib_metadata import version
 
 import torch
 from torch import nn, Tensor
@@ -55,11 +56,12 @@ class TransformerModel(nn.Module):
         return output
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, model_setup) -> None:
+    def __init__(self, model_setup, verbose = False) -> None:
         super().__init__()
         self.d_output = model_setup['d_output']
         self.super_init = False
         self.output_seq = model_setup['output_seq']
+        self.verbose = verbose
 
     def forward(self, inpt):
         #inpt N,S,D

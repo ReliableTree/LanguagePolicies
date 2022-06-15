@@ -195,7 +195,7 @@ class NetworkMeta(nn.Module):
         #self.runValidation(quick=False, model_params=model_params)
         disc_epoch = 0
         #epoch = 0
-        self.runValidation(quick=False, epoch=1, save=True, model_params=model_params, complete=True)
+        #self.runValidation(quick=False, epoch=1, save=True, model_params=model_params, complete=True)
 
         for epoch in range(epochs):
 
@@ -228,7 +228,7 @@ class NetworkMeta(nn.Module):
                         
                         self.global_step += 1
                         
-                        '''loss_module = 10
+                        loss_module = 10
                         plan_loss, p_debug_dict = self.model_step(succ)
                         plan_loss = plan_loss.detach()
                         while loss_module > plan_loss and disc_step < self.max_step_disc:
@@ -254,9 +254,9 @@ class NetworkMeta(nn.Module):
                             else:
                                 lmp = torch.cat((lmp, t_debug_dict['tailor loss positive'].reshape(1)), 0)
                                 lmn = torch.cat((lmn, t_debug_dict['tailor loss negative'].reshape(1)), 0)
-                            loss_module = torch.maximum(lmp, lmn).mean()'''
+                            loss_module = torch.maximum(lmp, lmn).mean()
                         #loss = plan_loss
-                        plan_loss, p_debug_dict = self.model_step(succ)
+                        #plan_loss, p_debug_dict = self.model_step(succ)
                         #self.meta_module.step()
                         #print(self.model.plan_nn.encoder.bias[0])
                         #print(1/0)
@@ -283,7 +283,7 @@ class NetworkMeta(nn.Module):
                         if epoch == 0:
                             self.total_steps += 1
                         self.global_step += 1
-                    print(f'loss: {train_loss.mean()}')
+                    #print(f'loss: {train_loss.mean()}')
                     #self.loadingBar(disc_step, self.total_steps, 25, addition="Loss: {:.6f}".format(train_loss.mean()), end=True)
 
                     '''if (disc_step >= self.max_step_disc):
@@ -369,7 +369,7 @@ class NetworkMeta(nn.Module):
         debug_dict['cont loss 1'] = cont_loss1.detach()
         
         inpt2 = right_stack_obj_trj(obsv, result1.detach())
-        plan2 = self.model(inpt2)['gen_trj']
+        plan2 = self.model(inputs = inpt2)['gen_trj']
         result2 = self.plan_decoder.forward(plan2)
         trj2 = result2[:,:,:d_out.size(-1)]
         trj_loss2, debug_dict2 = self.calculateLoss(trj2, d_out)
@@ -383,8 +383,8 @@ class NetworkMeta(nn.Module):
         self.plan_decoder_optimizer.step()
         debug_dict2['cont loss 2'] = cont_loss2.detach()
         debug_dict.update(debug_dict2)
-        if self.global_step % 1000 == 0:
-            self.createGraphsMW(d_in=1, d_out=d_out[0], result=trj1[0], toy=True, inpt=obsv[0,0], name='over fit', opt_trj=trj2[0], window=self.successSimulation.window)
+        #if self.global_step % 1000 == 0:
+        #    self.createGraphsMW(d_in=1, d_out=d_out[0], result=trj1[0], toy=True, inpt=obsv[0,0], name='over fit', opt_trj=trj2[0], window=self.successSimulation.window)
         return loss1.detach() + loss2.detach(), debug_dict
 
     def cont_loss(self, obvs, prediction):
@@ -396,7 +396,7 @@ class NetworkMeta(nn.Module):
         d_out = succ[0]
         result_size = (d_out.size(0), d_out.size(1), d_out.size(2)+obsv.size(-1))
         inpt = right_stack_obj_trj(obs=obsv, inpt=result_size)
-        plan = self.model(inpt)['gen_trj']
+        plan = self.model(inputs = inpt)['gen_trj']
         return plan
 
     def torch2tf(self, inpt):
@@ -484,17 +484,17 @@ class NetworkMeta(nn.Module):
             #torch.manual_seed(1)
             print("Running full validation...")
             num_examples = len(self.success)
-            if complete:
+            if (complete):
                 print('complete:')
                 self.meta_module.optim_run += 1
                 debug_dict = self.runvalidationTaylor(num_exp=num_envs)
-                self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
+                self.write_tboard_scalar(debug_dict=debug_dict, train = False)#, step=num_examples)
                 debug_dict = self.runvalidationTaylor(return_mode=1, num_exp=num_envs)
 
                 #tailor_success_optimized = debug_dict['true positive optimized']
-                self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
+                self.write_tboard_scalar(debug_dict=debug_dict, train = False)#, step=num_examples)
                 debug_dict = self.runvalidationTaylor(return_mode=2, num_exp=num_envs)
-                self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
+                self.write_tboard_scalar(debug_dict=debug_dict, train = False)#, step=num_examples)
 
             policy = self.meta_module
             policy.main_signal.model.eval()
@@ -503,7 +503,7 @@ class NetworkMeta(nn.Module):
             while not gt_policy_success:
                 envs = self.successSimulation.get_env(n=num_envs, env_tag = self.env_tag)
                 result = self.successSimulation.get_success(policy = policy, envs=envs)
-                if result is not False:
+                if (result is not False):
                     trajectories, inpt_obs, label, success, ftrj, plans = result
                     gt_policy_success = True
 
@@ -597,7 +597,7 @@ class NetworkMeta(nn.Module):
             #print(d_in)
             #self.model.eval()
             if not quick:
-                if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
+                if True or 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
 
                     self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=success, name = 'success')
                     fail = ~success
@@ -676,7 +676,7 @@ class NetworkMeta(nn.Module):
 
         if train:
             if self.init_train or True:
-                result = self.model(d_in)
+                result = self.model(inputs = d_in)
                 loss, debug_dict = self.calculateLoss(d_out, result)
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -697,7 +697,7 @@ class NetworkMeta(nn.Module):
             self.write_tboard_scalar(debug_dict=debug_dict, train=True)
         else:
             with torch.no_grad():
-                result = self.model(d_in)
+                result = self.model(inputs = d_in)
                 loss, debug_dict = self.calculateLoss(d_out=d_out, result=result)
             
 
@@ -741,7 +741,7 @@ class NetworkMeta(nn.Module):
         return ((a.squeeze() - b.squeeze())**2).mean()
 
     def calculateLoss(self, d_out, result, prefix = ''):
-        if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
+        if True or ('meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']):
             generated = d_out
         else:
             generated, attention, delta_t, weights, phase, loss_atn = d_out
@@ -760,7 +760,7 @@ class NetworkMeta(nn.Module):
             prefix + 'trj_loss':trj_loss,
             #prefix + 'phs_loss':phs_loss,
             }
-        if 'meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']:
+        if True or ('meta_world' in self.model.model_setup and self.model.model_setup['meta_world']['use']):
             loss = trj_loss * self.lw_trj
             debug_dict[prefix + 'main_loss'] = loss
         

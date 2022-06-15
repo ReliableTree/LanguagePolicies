@@ -132,7 +132,7 @@ class PolicyTranslationModelTorch(nn.Module):
 
         
         current_plan = self.get_plan(inpt_features) #350x16x8
-        
+        #print(f'current plan: {current_plan.shape}')
         result['gen_trj'] = current_plan
         result['inpt_trj'] = current_plan
         '''result['gen_trj'] = current_plan[:,:,:-1]
