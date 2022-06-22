@@ -174,9 +174,10 @@ class NetworkMeta(nn.Module):
         self.global_step = 0
         #self.runValidation(quick=False, model_params=model_params)
         disc_epoch = 0
+        best_loss = float('inf')
+
         for epoch in range(epochs):
             self.best_model = copy.deepcopy(self.state_dict())
-            best_loss = float('inf')
             self.model.reset_memory()
             rel_epoch = epoch/epochs
             print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
@@ -382,7 +383,8 @@ class NetworkMeta(nn.Module):
 
             print(f'num envs: {len(envs)}')
             fail = ~success
-            mean_success = success[:int(len(success)/2)].type(torch.float).mean()
+            #mean_success = success[:int(len(success)/2)].type(torch.float).mean()
+            mean_success = success.type(torch.float).mean()
             print(f'mean success before: {mean_success}')
             debug_dict = {'success rate generated' : mean_success}
 
@@ -390,7 +392,8 @@ class NetworkMeta(nn.Module):
             trajectories_opt, inpt_obs_opt, label_opt, success_opt, ftrjs_opt = self.successSimulation.get_success(policy = policy, envs=envs)
             fail_opt = ~success_opt
             if len(success_opt)>0:
-                mean_success_opt = success_opt[:int(len(success)/2)].type(torch.float).mean()
+                #mean_success_opt = success_opt[:int(len(success)/2)].type(torch.float).mean()
+                mean_success_opt = success_opt.type(torch.float).mean()
             else:
                 mean_success_opt = 0
             if mean_success_opt > self.last_mean_success:
