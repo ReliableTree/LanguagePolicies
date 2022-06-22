@@ -91,7 +91,7 @@ class NetworkMeta(nn.Module):
             if result is not False:
                 trajectories, inpt_obs, label, success, ftrj = result
                 gt_policy_success = True
-                
+
         inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
         inpt = torch.concat((trajectories, inpt_obs), dim = -1)
         self.tailor_setup_inpt = inpt
@@ -161,9 +161,6 @@ class NetworkMeta(nn.Module):
     def setDatasets(self, train_loader, val_loader):
         self.train_ds = train_loader
         self.val_ds   = val_loader
-        
-
-
 
     def train_tailor(self, ):
         trajectories, inpt_obs, success, ftrjs = self.successSimulation(policy = self.model, env_tag = self.env_tag, n = 10)
@@ -199,45 +196,45 @@ class NetworkMeta(nn.Module):
                 disc_step = 0
                 disc_epoch += 1
                 reinit = 0
-                while loss_module > 0.01 and disc_step < self.max_step_disc and reinit < 1:
-                    lmp = None
-                    lmn = None
-                    for succ, failed in self.tailor_loader:
+                #while loss_module > 0.01 and disc_step < self.max_step_disc and reinit < 1:
+                lmp = None
+                lmn = None
+                for succ, failed in self.tailor_loader:
 
-                        disc_step += 1
-                        self.global_step += 1
-                        debug_dict = self.tailor_step(succ, failed)
-                        if lmp is None:
-                            lmp = debug_dict['tailor loss positive'].reshape(1)
-                            lmn = debug_dict['tailor loss positive'].reshape(1)
-                        else:
-                            lmp = torch.cat((lmp, debug_dict['tailor loss positive'].reshape(1)), 0)
-                            lmn = torch.cat((lmn, debug_dict['tailor loss negative'].reshape(1)), 0)
+                    disc_step += 1
+                    self.global_step += 1
+                    debug_dict = self.tailor_step(succ, failed)
+                    if lmp is None:
+                        lmp = debug_dict['tailor loss positive'].reshape(1)
+                        lmn = debug_dict['tailor loss positive'].reshape(1)
+                    else:
+                        lmp = torch.cat((lmp, debug_dict['tailor loss positive'].reshape(1)), 0)
+                        lmn = torch.cat((lmn, debug_dict['tailor loss negative'].reshape(1)), 0)
 
-                        loss_module = torch.maximum(lmp, lmn).mean()
-                    
-                    #debug_dict = self.runvalidationTaylor()
-                    debug_dict['tailor module loss'] = loss_module
-                    self.write_tboard_scalar(debug_dict=debug_dict, train=True)
-                    if (disc_step > self.max_step_disc and disc_epoch >= 10):
-                        self.max_step_disc *= 1.3
-                        disc_epoch = 0
-                        if debug_dict['tailor loss negative'] > debug_dict['tailor loss positive']:
-                            tm_worst = debug_dict['tailor loss negative max']
-                        else:
-                            tm_worst = debug_dict['tailor loss positive max']
+                    loss_module = torch.maximum(lmp, lmn).mean()
+                
+                #debug_dict = self.runvalidationTaylor()
+                debug_dict['tailor module loss'] = loss_module
+                self.write_tboard_scalar(debug_dict=debug_dict, train=True)
+                if (disc_step > self.max_step_disc and disc_epoch >= 10):
+                    self.max_step_disc *= 1.3
+                    disc_epoch = 0
+                    if debug_dict['tailor loss negative'] > debug_dict['tailor loss positive']:
+                        tm_worst = debug_dict['tailor loss negative max']
+                    else:
+                        tm_worst = debug_dict['tailor loss positive max']
 
-                        self.tailor_modules[int(tm_worst)].init_model(inpt = self.tailor_setup_inpt)
-                        reinit += 1
-                        #tm.init_model(inpt = self.tailor_setup_inpt)
+                    self.tailor_modules[int(tm_worst)].init_model(inpt = self.tailor_setup_inpt)
+                    reinit += 1
+                    #tm.init_model(inpt = self.tailor_setup_inpt)
 
-                    '''if disc_step > self.max_step_disc or disc_epoch > 10:
-                        disc_epoch = 0
-                        if disc_step > self.max_step_disc:
-                            self.max_step_disc = self.max_step_disc * 1.3
-                        disc_step = 0
-                        for tm in self.tailor_modules:
-                            tm.init_model(inpt = self.tailor_setup_inpt)'''
+                '''if disc_step > self.max_step_disc or disc_epoch > 10:
+                    disc_epoch = 0
+                    if disc_step > self.max_step_disc:
+                        self.max_step_disc = self.max_step_disc * 1.3
+                    disc_step = 0
+                    for tm in self.tailor_modules:
+                        tm.init_model(inpt = self.tailor_setup_inpt)'''
             
 
             if self.init_train or True:
