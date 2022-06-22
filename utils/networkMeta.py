@@ -72,7 +72,6 @@ class NetworkMeta(nn.Module):
 
         self.best_improved_success = 0
 
-
     def setup_model(self, model_params):
         with torch.no_grad():
             for step, (d_in, d_out) in enumerate(self.train_ds):
@@ -176,7 +175,8 @@ class NetworkMeta(nn.Module):
         #self.runValidation(quick=False, model_params=model_params)
         disc_epoch = 0
         for epoch in range(epochs):
-
+            self.best_model = copy.deepcopy(self.state_dict())
+            best_loss = float('inf')
             self.model.reset_memory()
             rel_epoch = epoch/epochs
             print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
@@ -251,9 +251,16 @@ class NetworkMeta(nn.Module):
                     self.global_step += 1
 
                 self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
+                if np.mean(train_loss) < best_loss:
+                    best_loss = np.mean(train_loss)
+                    print(f'best model with {np.mean(train_loss)}')
+                    self.best_model = copy.deepcopy(self.state_dict())
             if (epoch+1)% model_params['val_every'] == 0:
-                complete = (epoch+1)%(5*model_params['val_every']) == 0
+                self.load_state_dict(self.best_model)
+                best_loss = float('inf')
+                complete = (epoch+1)%(2*model_params['val_every']) == 0
                 print(f'logname: {self.logname}')
+                #self.load_state_dict(self.best_model)
                 self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params, complete=complete)
            #self.train_tailor()
             
@@ -344,7 +351,7 @@ class NetworkMeta(nn.Module):
         #with torch.no_grad():
         if (not quick):
             if complete:
-                num_envs = 20
+                num_envs = 100
             else:
                 num_envs = 10
             #torch.manual_seed(1)
@@ -370,12 +377,12 @@ class NetworkMeta(nn.Module):
                 envs = self.successSimulation.get_env(n=num_envs, env_tag = self.env_tag)
                 result = self.successSimulation.get_success(policy = policy, envs=envs)
                 if result is not False:
-                    trajectories, inpt_obs, label, success, ftrj = result
+                    trajectories, inpt_obs, label, success, ftrjs = result
                     gt_policy_success = True
 
             print(f'num envs: {len(envs)}')
             fail = ~success
-            mean_success = success.type(torch.float).mean()
+            mean_success = success[:int(len(success)/2)].type(torch.float).mean()
             print(f'mean success before: {mean_success}')
             debug_dict = {'success rate generated' : mean_success}
 
@@ -383,7 +390,7 @@ class NetworkMeta(nn.Module):
             trajectories_opt, inpt_obs_opt, label_opt, success_opt, ftrjs_opt = self.successSimulation.get_success(policy = policy, envs=envs)
             fail_opt = ~success_opt
             if len(success_opt)>0:
-                mean_success_opt = success_opt.type(torch.float).mean()
+                mean_success_opt = success_opt[:int(len(success)/2)].type(torch.float).mean()
             else:
                 mean_success_opt = 0
             if mean_success_opt > self.last_mean_success:
@@ -404,10 +411,10 @@ class NetworkMeta(nn.Module):
                 self.best_improved_success = mean_success_opt - mean_success
                 self.saveNetworkToFile(add=self.logname + "/best_improved/", data_path= self.data_path)
 
-            num_improved = (success_opt * fail).type(torch.float).mean()
+            '''num_improved = (success_opt * fail).type(torch.float).mean()
             num_deproved = (success * fail_opt).type(torch.float).mean()
             debug_dict['rel number improved'] = num_improved
-            debug_dict['rel number failed'] = num_deproved
+            debug_dict['rel number failed'] = num_deproved'''
 
             self.write_tboard_scalar(debug_dict=debug_dict, train=not complete, step = self.global_step)
         
@@ -416,23 +423,23 @@ class NetworkMeta(nn.Module):
             else:
                 pass
                 #self.model.load_state_dict(self.model_state_dict)
-            num_exp = 10
-            if (mean_success >= 0.0 and complete) or True:
+            #num_exp = -0
+            if not complete:
                 fail = ~success
                 fail_opt = ~success_opt
-                '''self.trajectories = torch.cat((self.trajectories, trajectories[:num_exp]), dim=0)[-30000:]
-                self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs[:num_exp]), dim=0)[-30000:]
-                self.success = torch.cat((self.success, success[:num_exp]), dim=0)[-30000:]
-                self.ftrj = torch.cat((self.ftrj, ftrjs[:num_exp]))'''
+                self.trajectories = torch.cat((self.trajectories, trajectories), dim=0)[-30000:]
+                self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs), dim=0)[-30000:]
+                self.success = torch.cat((self.success, success), dim=0)[-30000:]
+                self.ftrj = torch.cat((self.ftrj, ftrjs))
 
-                self.trajectories = torch.cat((self.trajectories, trajectories_opt[:num_exp]), dim=0)[-30000:]
-                self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs_opt[:num_exp]), dim=0)[-30000:]
-                self.success = torch.cat((self.success, success_opt[:num_exp]), dim=0)[-30000:]
-                self.ftrj = torch.cat((self.ftrj, ftrjs_opt[:num_exp]))
+                '''self.trajectories = torch.cat((self.trajectories, trajectories_opt), dim=0)[-30000:]
+                self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs_opt), dim=0)[-30000:]
+                self.success = torch.cat((self.success, success_opt), dim=0)[-30000:]
+                self.ftrj = torch.cat((self.ftrj, ftrjs_opt))'''
 
                 train_data = self.train_ds.dataset
-                if success_opt[:num_exp].sum() > 0:
-                    train_data.add_data(data=inpt_obs_opt[:num_exp][success_opt[:num_exp]], label=trajectories_opt[:num_exp][success_opt[:num_exp]])
+                if success_opt.sum() > 0:
+                    train_data.add_data(data=inpt_obs_opt[success_opt], label=trajectories_opt[success_opt])
                     self.train_ds = torch.utils.data.DataLoader(train_data, batch_size=32, shuffle=True)
                 print(f'num examples: {len(self.success)}')
                 print(f'num demonstrations: {len(train_data)}')
@@ -472,7 +479,7 @@ class NetworkMeta(nn.Module):
                     fail_opt = ~success_opt
                     self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=fail, name = 'fail')
 
-                    fail_to_success = success_opt & fail
+                    '''fail_to_success = success_opt & fail
                     self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=fail_to_success, name = 'fail to success', opt_trj=trajectories_opt)
 
                     success_to_fail = success & fail_opt
@@ -480,7 +487,7 @@ class NetworkMeta(nn.Module):
                     
                     fail_to_fail = fail & fail_opt
                     self.plot_with_mask(label=label, trj=trajectories, inpt=inpt_obs, mask=fail_to_fail, name = 'fail to fail', opt_trj=trajectories_opt)
-
+'''
                     
                     #print(f'label-check: {label[success_to_fail][0]}')
                     #print(f'label-opt-check: {label_opt[success_to_fail][0]}')
