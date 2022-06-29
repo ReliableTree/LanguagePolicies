@@ -3,6 +3,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 from os import name, path, makedirs
 from random import triangular
+from tkinter.messagebox import NO
 import tensorflow as tf
 import sys
 import numpy as np
@@ -82,10 +83,11 @@ class NetworkMeta(nn.Module):
         self.best_mean_success_complete = 0
         self.success_val = None
         self.model_setup = model_setup
-        self.model_conv = ConvergenceDetector(setup=self.setup_model, set_meta=self.set_meta_module, writer=self.write_tboard_scalar, name='model', conf=0.05, interval = 300)
-        self.tailor_conv = ConvergenceDetector(setup=self.setup_tailor, set_meta=self.set_meta_module, writer=self.write_tboard_scalar, name='tailor', conf = 0.05, interval = 300)
+        self.model_conv = ConvergenceDetector(setup=self.setup_model, set_meta=self.set_meta_module, writer=self.write_tboard_scalar, name='model', conf=0.1, interval = 300)
+        self.tailor_conv = ConvergenceDetector(setup=self.setup_tailor, set_meta=self.set_meta_module, writer=self.write_tboard_scalar, name='tailor', conf = 0.1, interval = 40)
         self.max_acc = 0
         self.min_loss_module_train = float('inf')
+        self.meta_module = None
 
     def setup_model(self):
         self.model   = PolicyTranslationModelTorch(od_path="", model_setup=self.model_setup, device=self.device)
@@ -100,7 +102,12 @@ class NetworkMeta(nn.Module):
         
     def set_meta_module(self):
         self.signal_main = SignalModule(model=self.model, loss_fct=self.calculateLoss)
+        max_steps = None
+        if self.meta_module is not None:
+            max_steps = self.meta_module.max_steps
         self.meta_module = MetaModule(main_signal = self.signal_main, tailor_signals=self.tailor_modules, lr = self.mo_lr, writer = self.write_tboard_scalar, device='cuda')
+        if max_steps is not None:
+            self.meta_module.max_steps = max_steps
 
     def setup_tailor(self, set_tailor_data=False):
         policy = self.model
@@ -267,7 +274,7 @@ class NetworkMeta(nn.Module):
 
             loss_goal_achieved = (self.best_loss < 1e-3) and ((self.min_loss_module_train < 1e-3) or self.init_train)
             val_epoch = (epoch+1) % model_params['val_every'] == 0
-            max_epochs = (epoch+1) % (3*model_params['val_every']) == 0
+            max_epochs = (epoch+1) % (6*model_params['val_every']) == 0
 
             if (val_epoch and loss_goal_achieved) or (num_convs_model > 1) or (num_convs_tailor > 1) or (max_epochs and not self.init_train):
                 self.num_vals += 1
@@ -420,7 +427,7 @@ class NetworkMeta(nn.Module):
             if complete:
                 num_envs = 100
             else:
-                num_envs = 20
+                num_envs = 5
             #torch.manual_seed(1)
             print("Running full validation...")
             num_examples = int(self.tailor_data_train.num_ele())
@@ -451,6 +458,7 @@ class NetworkMeta(nn.Module):
             print(f'num envs: {len(envs)}')
             fail = ~success
             #mean_success = success[:int(len(success)/2)].type(torch.float).mean()
+            print(f'mean success tensor: {achieved_succ}')
             mean_success = achieved_succ.type(torch.float).mean()
 
             print(f'mean success before: {mean_success}')
@@ -466,8 +474,9 @@ class NetworkMeta(nn.Module):
                 else:
                     mean_success_opt = 0
                 if mean_success_opt > self.last_mean_success:
-                    policy.max_steps = policy.max_steps * 1.1
+                    policy.max_steps = policy.max_steps * 1.2
                     self.last_mean_success = mean_success_opt
+                    print('_____________________________+opti steps')
 
 
                 
@@ -487,7 +496,6 @@ class NetworkMeta(nn.Module):
                         self.saveNetworkToFile(add=self.logname + "/best_improved_complete/", data_path= self.data_path)
                     else:
                         self.saveNetworkToFile(add=self.logname + "/best_improved/", data_path= self.data_path)
-
                 '''num_improved = (success_opt * fail).type(torch.float).mean()
                 num_deproved = (success * fail_opt).type(torch.float).mean()
                 debug_dict['rel number improved'] = num_improved
@@ -504,9 +512,9 @@ class NetworkMeta(nn.Module):
                 print(f'num tailor example val: {len(self.tailor_data_val.success)}')
 
                 if not self.init_train:
-                    impro_mask = success_opt & ~success
-                    self.train_ds.add_data(data=inpt_obs[success], label=trajectories[success])
-                    self.train_ds.add_data(data=inpt_obs_opt[impro_mask], label=trajectories_opt[impro_mask])
+                    #impro_mask = success_opt & ~success
+                    #self.train_ds.add_data(data=inpt_obs[success], label=trajectories[success])
+                    self.train_ds.add_data(data=inpt_obs_opt[success_opt], label=trajectories_opt[success_opt])
                     print('added train data')
                 
                 self.model_conv.reset_history()
