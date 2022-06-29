@@ -83,7 +83,7 @@ class NetworkMeta(nn.Module):
         self.success_val = None
         self.model_setup = model_setup
         self.model_conv = ConvergenceDetector(setup=self.setup_model, set_meta=self.set_meta_module, writer=self.write_tboard_scalar, name='model', conf=0.05, interval = 300)
-        self.tailor_conv = ConvergenceDetector(setup=self.setup_tailor, set_meta=self.set_meta_module, writer=self.write_tboard_scalar, name='tailor', conf = 0.1, interval = 100)
+        self.tailor_conv = ConvergenceDetector(setup=self.setup_tailor, set_meta=self.set_meta_module, writer=self.write_tboard_scalar, name='tailor', conf = 0.05, interval = 300)
         self.max_acc = 0
         self.min_loss_module_train = float('inf')
 
@@ -267,7 +267,7 @@ class NetworkMeta(nn.Module):
 
             loss_goal_achieved = (self.best_loss < 1e-3) and ((self.min_loss_module_train < 1e-3) or self.init_train)
             val_epoch = (epoch+1) % model_params['val_every'] == 0
-            max_epochs = (epoch+1) % (10*model_params['val_every']) == 0
+            max_epochs = (epoch+1) % (3*model_params['val_every']) == 0
 
             if (val_epoch and loss_goal_achieved) or (num_convs_model > 1) or (num_convs_tailor > 1) or (max_epochs and not self.init_train):
                 self.num_vals += 1
@@ -420,7 +420,7 @@ class NetworkMeta(nn.Module):
             if complete:
                 num_envs = 100
             else:
-                num_envs = 10
+                num_envs = 20
             #torch.manual_seed(1)
             print("Running full validation...")
             num_examples = int(self.tailor_data_train.num_ele())
@@ -504,8 +504,9 @@ class NetworkMeta(nn.Module):
                 print(f'num tailor example val: {len(self.tailor_data_val.success)}')
 
                 if not self.init_train:
-                    #train_data.add_data(data=inpt_obs[success], label=trajectories[success])
-                    self.train_ds.add_data(data=inpt_obs_opt[success_opt], label=trajectories_opt[success_opt])
+                    impro_mask = success_opt & ~success
+                    self.train_ds.add_data(data=inpt_obs[success], label=trajectories[success])
+                    self.train_ds.add_data(data=inpt_obs_opt[impro_mask], label=trajectories_opt[impro_mask])
                     print('added train data')
                 
                 self.model_conv.reset_history()
