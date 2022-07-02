@@ -79,8 +79,9 @@ class NetworkTorch(nn.Module):
             for step, (d_in, d_out) in enumerate(self.train_ds):
                 if (step+1) % 400 == 0:
                     validation_loss = self.runValidation(quick=True, pnt=False, epoch=epoch, save = False, model_params=model_params)   
-                    self.model.model_setup['train'] = True          
+                    self.model.model_setup['train'] = True                 
                 train_loss.append(self.step(d_in, d_out, train=True, model_params=model_params))
+                
                 self.loadingBar(step, self.total_steps, 25, addition="Loss: {:.6f} | {:.6f}".format(np.mean(train_loss[-10:]), validation_loss))
                 if epoch == 0:
                     self.total_steps += 1
@@ -92,6 +93,8 @@ class NetworkTorch(nn.Module):
             if (epoch + 1) % model_params['val_every'] == 0:
                 print(f'logname: {self.logname}')
                 self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params)
+            self.scheduler.step()
+            print(f'learning rate: {self.scheduler.get_last_lr()[0]}')
 
             if self.use_tboard:
                 self.model.saveModelToFile(add = self.logname + "/", data_path = self.data_path)
@@ -185,24 +188,27 @@ class NetworkTorch(nn.Module):
                 result = self.model(d_in, gt_attention = attention)
         else:
             result = self.model(d_in)
-
+        
         loss, debug_dict = self.calculateLoss(d_out, result, model_params)
         #loss, (atn, trj, dt, phs, wght, rel_obj) = self.calculateLoss(d_out, result, train)
 
         if train:
             if not self.optimizer:
-                #self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
-                self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
+                self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
                 #self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999)) 
                 #self.optimizer = torch.optim.SGD(params=self.model.parameters(), lr=self.lr, weight_decay=1e-2) 
-                #self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 1.0, gamma=self.gamma_sl)
+                self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 1.0, gamma=self.gamma_sl)
             #print(f'num parametrs in model: {len(list(self.model.parameters()))}')
+
             self.optimizer.zero_grad()
+            h = time.perf_counter()
+
             loss.backward()
 
             '''for i, para in enumerate(list(self.model.parameters())):
                 print(f'para num {i} has grad sum {para.grad.detach().sum()}')'''
             self.optimizer.step()
+
             if self.use_tboard:
                 self.tboard.addTrainScalar("Loss", loss, self.global_step)
                 for para, value in debug_dict.items():
