@@ -86,7 +86,7 @@ class NetworkMeta(nn.Module):
         policy = self.model
         gt_policy_success = False
         while not gt_policy_success:
-            envs = self.successSimulation.get_env(n=2, env_tag = self.env_tag)
+            envs = self.successSimulation.get_env(n=2, env_tag = self.env_tag, name=self.logname)
             result = self.successSimulation.get_success(policy = policy, envs=envs)
             if result is not False:
                 trajectories, inpt_obs, label, success, ftrj = result
@@ -132,7 +132,7 @@ class NetworkMeta(nn.Module):
         policy.return_mode = 1
         gt_policy_success = False
         while not gt_policy_success:
-            envs = self.successSimulation.get_env(n=2, env_tag = self.env_tag)
+            envs = self.successSimulation.get_env(n=2, env_tag = self.env_tag, name=self.logname)
             result = self.successSimulation.get_success(policy = policy, envs=envs)
             if result is not False:
                 trajectories, inpt_obs, label, success, ftrj = result
@@ -218,16 +218,17 @@ class NetworkMeta(nn.Module):
                     
                     #debug_dict = self.runvalidationTaylor()
                     debug_dict['tailor module loss'] = loss_module
+                    debug_dict['disc_step'] = torch.tensor(disc_step) 
                     self.write_tboard_scalar(debug_dict=debug_dict, train=True)
-                    if (disc_step > self.max_step_disc and disc_epoch >= 10):
+                    if (disc_step > self.max_step_disc):
                         '''self.max_step_disc *= 1.3
                         disc_epoch = 0
                         if debug_dict['tailor loss negative'] > debug_dict['tailor loss positive']:
                             tm_worst = debug_dict['tailor loss negative max']
                         else:
                             tm_worst = debug_dict['tailor loss positive max']
-
-                        self.tailor_modules[int(tm_worst)].init_model(inpt = self.tailor_setup_inpt)'''
+                        '''
+                        self.tailor_modules[0].init_model(inpt = self.tailor_setup_inpt)
                         print('___________________________tailor reset__________________________________________')
                         reinit += 1
                         #tm.init_model(inpt = self.tailor_setup_inpt)
@@ -295,7 +296,7 @@ class NetworkMeta(nn.Module):
             policy.return_mode = 0
         gt_policy_success = False
         while not gt_policy_success:
-            envs = self.successSimulation.get_env(n=num_exp, env_tag = self.env_tag)
+            envs = self.successSimulation.get_env(n=num_exp, env_tag = self.env_tag, name=self.logname)
             result = self.successSimulation.get_success(policy = policy, envs=envs)
             if result is not False:
                 trajectories, inpt_obs, label, success, ftrj = result
@@ -351,20 +352,20 @@ class NetworkMeta(nn.Module):
                 num_envs = 200
             else:
                 num_envs = 10
-            
+            num_envs_tailor = 10
             #torch.manual_seed(1)
             print("Running full validation...")
             num_examples = len(self.success)
             if complete:
                 print('complete:')
                 self.meta_module.optim_run += 1
-                debug_dict = self.runvalidationTaylor(num_exp=num_envs)
+                debug_dict = self.runvalidationTaylor(num_exp=num_envs_tailor)
                 self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
-                debug_dict = self.runvalidationTaylor(return_mode=1, num_exp=num_envs)
+                debug_dict = self.runvalidationTaylor(return_mode=1, num_exp=num_envs_tailor)
 
                 #tailor_success_optimized = debug_dict['true positive optimized']
                 self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
-                debug_dict = self.runvalidationTaylor(return_mode=2, num_exp=num_envs)
+                debug_dict = self.runvalidationTaylor(return_mode=2, num_exp=num_envs_tailor)
                 self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
 
             policy = self.meta_module
@@ -372,7 +373,7 @@ class NetworkMeta(nn.Module):
             policy.return_mode = 0
             gt_policy_success = False
             while not gt_policy_success:
-                envs = self.successSimulation.get_env(n=num_envs, env_tag = self.env_tag)
+                envs = self.successSimulation.get_env(n=num_envs, env_tag = self.env_tag, name=self.logname)
                 result = self.successSimulation.get_success(policy = policy, envs=envs)
                 if result is not False:
                     trajectories, inpt_obs, label, success, ftrj = result
