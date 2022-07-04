@@ -178,6 +178,7 @@ class NetworkMeta(nn.Module):
         self.global_step = 0
         #self.runValidation(quick=False, model_params=model_params)
         disc_epoch = 0
+        reinit = 0
         for epoch in range(epochs):
 
             self.model.reset_memory()
@@ -198,7 +199,6 @@ class NetworkMeta(nn.Module):
                 #self.reset_tailor_models()
                 disc_step = 0
                 disc_epoch += 1
-                reinit = 0
                 while loss_module > 0.01 and disc_step < self.max_step_disc and reinit < 1:
                     lmp = None
                     lmn = None
@@ -258,6 +258,8 @@ class NetworkMeta(nn.Module):
                 self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
             if (epoch+1)% model_params['val_every'] == 0:
                 complete = (epoch+1)%(5*model_params['val_every']) == 0
+                self.tailor_modules[0].init_model(inpt = self.tailor_setup_inpt)
+                reinit = 0
                 print(f'logname: {self.logname}')
                 self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params, complete=complete)
            #self.train_tailor()
