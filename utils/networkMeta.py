@@ -72,6 +72,7 @@ class NetworkMeta(nn.Module):
 
         self.best_improved_success = 0
         self.global_step = 0
+        self.add_data = False
 
 
 
@@ -494,22 +495,22 @@ class NetworkMeta(nn.Module):
 
 
     def add_data_to_loader(self, inpt_obs_opt, trajectories_opt, success_opt, ftrjs_opt, num_exp):
+        if self.add_data:
+            self.trajectories = torch.cat((self.trajectories, trajectories_opt[:num_exp]), dim=0)
+            self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs_opt[:num_exp]), dim=0)
+            self.success = torch.cat((self.success, success_opt[:num_exp]), dim=0)
+            self.ftrj = torch.cat((self.ftrj, ftrjs_opt[:num_exp]))
 
-        self.trajectories = torch.cat((self.trajectories, trajectories_opt[:num_exp]), dim=0)
-        self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs_opt[:num_exp]), dim=0)
-        self.success = torch.cat((self.success, success_opt[:num_exp]), dim=0)
-        self.ftrj = torch.cat((self.ftrj, ftrjs_opt[:num_exp]))
-
-        train_data = self.train_ds.dataset
-        if success_opt[:num_exp].sum() > 0:
-            train_data.add_data(data=inpt_obs_opt[:num_exp][success_opt[:num_exp]], label=trajectories_opt[:num_exp][success_opt[:num_exp]])
-            self.train_ds = torch.utils.data.DataLoader(train_data, batch_size=32, shuffle=True)
+            train_data = self.train_ds.dataset
+            if success_opt[:num_exp].sum() > 0:
+                train_data.add_data(data=inpt_obs_opt[:num_exp][success_opt[:num_exp]], label=trajectories_opt[:num_exp][success_opt[:num_exp]])
+                self.train_ds = torch.utils.data.DataLoader(train_data, batch_size=32, shuffle=True)
+            self.write_tboard_scalar({'num examples':torch.tensor(len(self.success))}, train=False)
+            tailor_data = TorchDatasetTailor(trajectories= self.trajectories, obsv=self.inpt_obs, success=self.success, ftrj = self.ftrj)
+            self.tailor_loader = DataLoader(tailor_data, batch_size=32, shuffle=True)
+            self.init_train = False
         print(f'num examples: {len(self.success)}')
-        print(f'num demonstrations: {len(train_data)}')
-        self.write_tboard_scalar({'num examples':torch.tensor(len(self.success))}, train=False)
-        tailor_data = TorchDatasetTailor(trajectories= self.trajectories, obsv=self.inpt_obs, success=self.success, ftrj = self.ftrj)
-        self.tailor_loader = DataLoader(tailor_data, batch_size=32, shuffle=True)
-        self.init_train = False
+        print(f'num demonstrations: {len(self.train_ds.dataset)}')
 
     def write_tboard_scalar(self, debug_dict, train, step = None):
         step = self.global_step
