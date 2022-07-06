@@ -267,11 +267,20 @@ class NetworkMeta(nn.Module):
             
             self.scheduler.step()
 
-    
+    def get_tailor_input_wo(self, tinpt):
+        trj, obs, success, ftrj = tinpt
+        n_obs = self.get_d_in_wo_obsv(obs)
+        print(f'in network get tailor inpt expected batch len, dim: {n_obs.shape}')
+        print(f'in network get tailor inpt expected zeros from 1: {n_obs[0,:10]}')
+        return (trj, n_obs, success, ftrj)
     
     def tailor_step(self, succ, failed):
         debug_dict = tailor_optimizer(tailor_modules = self.tailor_modules, succ=succ, failed=failed)
-        self.write_tboard_scalar(debug_dict=debug_dict, train=True)
+        self.write_tboard_scalar(debug_dict=debug_dict, train=True, prefix='with observation ')
+        succ_wo = self.get_tailor_input_wo(succ)
+        failed_wo = self.get_tailor_input_wo(failed)
+        debug_dict = tailor_optimizer(tailor_modules = self.tailor_modules, succ=succ_wo, failed=failed_wo)
+        self.write_tboard_scalar(debug_dict=debug_dict, train=True, prefix='without observation ')
         return debug_dict
     
     def torch2tf(self, inpt):
@@ -511,14 +520,15 @@ class NetworkMeta(nn.Module):
         self.tailor_loader = DataLoader(tailor_data, batch_size=32, shuffle=True)
         self.init_train = False
 
-    def write_tboard_scalar(self, debug_dict, train, step = None):
+    def write_tboard_scalar(self, debug_dict, train, step = None, prefix = ''):
         step = self.global_step
         if self.use_tboard:
                 for para, value in debug_dict.items():
+                    w_para = prefix + para
                     if train:
-                        self.tboard.addTrainScalar(para, value, step)
+                        self.tboard.addTrainScalar(w_para, value, step)
                     else:
-                        self.tboard.addValidationScalar(para, value, step)
+                        self.tboard.addValidationScalar(w_para, value, step)
 
     def plot_with_mask(self, label, trj, inpt, mask, name, opt_trj=None):
         if mask.sum()>0:
@@ -529,28 +539,32 @@ class NetworkMeta(nn.Module):
                 opt_trj = opt_trj[mask][0]
             self.createGraphsMW(d_in=1, d_out=label, result=trj, toy=False, inpt=inpt, name=name, opt_trj=opt_trj, window=self.successSimulation.window)
 
+    def get_d_in_wo_obsv(self, obsv):
+        obs_wo = torch.zeros_like(obsv)
+        obs_wo[:,:1] = obsv[:,:1]
+        return obs_wo
+        
+
     def step(self, d_in, d_out, train, model_params):
 
         if train:
-            if self.init_train or True:
-                result = self.model(d_in)
-                loss, debug_dict = self.calculateLoss(d_out, result, model_params)
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-            
-            else:
-                self.signal_main, _, result, debug_dict = meta_optimizer(
-                    main_module = self.signal_main, 
-                    tailor_modules = self.tailor_modules, 
-                    inpt=d_in, d_out=d_out, 
-                    epoch=1,
-                    debug_second = False,
-                    force_tailor_improvement = False,
-                    model_params = model_params)
+            #with obsv:
+            result = self.model(d_in)
+            loss, debug_dict = self.calculateLoss(d_out, result, model_params, prefix='with obsv')
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+            self.write_tboard_scalar(debug_dict=debug_dict, train=True)
+            #without obsv:
+            d_in_wo = self.get_d_in_wo_obsv(d_in)
+            print(f'in network train d_in_wo expected batch,len,dim: {d_in_wo.shape}')
+            print(f'in network train d_in_wo expected 0s from 1: {d_in_wo[0,:10]}')
 
-                loss = debug_dict['main_loss']
-
+            result = self.model(d_in_wo)
+            loss, debug_dict = self.calculateLoss(d_out, result, model_params, prefix='with obsv')
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
             self.write_tboard_scalar(debug_dict=debug_dict, train=True)
         else:
             with torch.no_grad():
