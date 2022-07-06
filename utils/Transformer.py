@@ -43,6 +43,9 @@ class TransformerModel(nn.Module):
         Returns:
             output Tensor of shape [seq_len, batch_size, ntoken]
         """
+        print(f'in transformer expected len,batch,dim: {src.shape}')
+        print(f'in transformer src: expected: 1!=2: {src[:2,0]}')
+
         src = self.encoder(src) * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, src_mask)
