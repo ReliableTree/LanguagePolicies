@@ -35,7 +35,7 @@ class NetworkMeta(nn.Module):
         self.env_tag = env_tag
         self.init_train = True
         self.max_success_rate = 0
-        self.max_step_disc = 12000
+        self.max_step_disc = 1200
 
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
@@ -178,6 +178,9 @@ class NetworkMeta(nn.Module):
         self.global_step = 0
         #self.runValidation(quick=False, model_params=model_params)
         disc_epoch = 0
+        reinit = 0
+        disc_step = 0
+
         for epoch in range(epochs):
 
             self.model.reset_memory()
@@ -196,9 +199,7 @@ class NetworkMeta(nn.Module):
                     tm.init_model(inpt = self.tailor_setup_inpt)'''
                 loss_module = 1
                 #self.reset_tailor_models()
-                disc_step = 0
                 disc_epoch += 1
-                reinit = 0
                 while loss_module > 0.01 and disc_step < self.max_step_disc and reinit < 1:
                     lmp = None
                     lmn = None
@@ -256,7 +257,9 @@ class NetworkMeta(nn.Module):
 
                 self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
             if (epoch+1)% model_params['val_every'] == 0:
-                complete = (epoch+1)%(5*model_params['val_every']) == 0
+                reinit = 0
+                disc_step = 0
+                complete = (epoch+1)%(20*model_params['val_every']) == 0
                 print(f'logname: {self.logname}')
                 self.runValidation(quick=False, epoch=epoch, save=True, model_params=model_params, complete=complete)
            #self.train_tailor()
@@ -351,6 +354,7 @@ class NetworkMeta(nn.Module):
                 num_envs = 200
             else:
                 num_envs = 10
+            num_eval = 10
             
             #torch.manual_seed(1)
             print("Running full validation...")
@@ -358,13 +362,13 @@ class NetworkMeta(nn.Module):
             if complete:
                 print('complete:')
                 self.meta_module.optim_run += 1
-                debug_dict = self.runvalidationTaylor(num_exp=num_envs)
+                debug_dict = self.runvalidationTaylor(num_exp=num_eval)
                 self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
-                debug_dict = self.runvalidationTaylor(return_mode=1, num_exp=num_envs)
+                debug_dict = self.runvalidationTaylor(return_mode=1, num_exp=num_eval)
 
                 #tailor_success_optimized = debug_dict['true positive optimized']
                 self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
-                debug_dict = self.runvalidationTaylor(return_mode=2, num_exp=num_envs)
+                debug_dict = self.runvalidationTaylor(return_mode=2, num_exp=num_eval)
                 self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
 
             policy = self.meta_module
