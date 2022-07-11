@@ -194,7 +194,7 @@ class NetworkMeta(nn.Module):
             model_params['obj_embedding']['train_embedding']  = rel_epoch < 1.1
             #print(f'train embedding: {model_params["obj_embedding"]["train_embedding"]}')
             self.model.model_setup['train'] = True
-            if not self.init_train or True:
+            if not self.init_train and False:
                 self.meta_module.train()
                 self.model.eval()
                 #self.tailor_modules[0].model.train()
