@@ -42,11 +42,14 @@ class TBoardGraphsTorch():
         with self.__tboard_train.as_default():
             tfvalue = self.torch2tf(value)
             tf.summary.scalar(name, tfvalue, step=stepid)
+            self.__tboard_train.flush()
 
     def addValidationScalar(self, name, value, stepid):
         with self.__tboard_validation.as_default():
             tfvalue = self.torch2tf(value)
             tf.summary.scalar(name, tfvalue, step=stepid)
+            self.__tboard_validation.flush()
+
 
     def torch2tf(self, inpt):
         if inpt is not None:
@@ -61,7 +64,8 @@ class TBoardGraphsTorch():
         tf_y_true = self.torch2tf(y_true)
         tf_y_pred = self.torch2tf(y_pred)
         tf_phase = self.torch2tf(phase)
-        tf_inpt = self.torch2tf(inpt)
+        if inpt is not None:
+            tf_inpt = self.torch2tf(inpt)
         if p_dt is not None:
             tf_dt = self.torch2tf(dt)
             tf_p_dt = self.torch2tf(p_dt)
@@ -71,7 +75,8 @@ class TBoardGraphsTorch():
 
         tf_y_true      = tf_y_true.numpy()
         tf_y_pred      = tf_y_pred.numpy()
-        tf_inpt        = tf_inpt.numpy()
+        if inpt is not None:
+            tf_inpt        = tf_inpt.numpy()
         if tf_phase is not None:
             tf_phase       = tf_phase.numpy()
 

@@ -5,20 +5,22 @@ import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from MetaWorld.utilsMW.model_setup_obj import ModelSetup
 
 class TransformerModel(nn.Module):
 
-    def __init__(self, ntoken = 0, d_output = 0, d_model = 0, nhead = 0, d_hid = 0,
-                 nlayers = 0, dropout = 0.2, model_setup = None):
+    def __init__(self, model_setup:ModelSetup = None):
         super().__init__()
         self.model_type = 'Transformer'
         if model_setup is not None:
-            ntoken = model_setup['ntoken']
-            d_output = model_setup['d_output']
-            d_model = model_setup['d_model']
-            nhead = model_setup['nhead']
-            d_hid = model_setup['d_hid']
-            nlayers = model_setup['nlayers']
+            ntoken = model_setup.ntoken
+            d_output = model_setup.d_output
+            d_model = model_setup.d_model
+            nhead = model_setup.nhead
+            d_hid = model_setup.d_hid
+            nlayers = model_setup.nlayers
+            dropout = model_setup.dropout
+
         self.pos_encoder = PositionalEncoding(d_model, dropout)
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
@@ -43,6 +45,7 @@ class TransformerModel(nn.Module):
         Returns:
             output Tensor of shape [seq_len, batch_size, ntoken]
         """
+
         src = self.encoder(src) * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, src_mask)
@@ -50,17 +53,17 @@ class TransformerModel(nn.Module):
         return output
 
 class TailorTransformer(TransformerModel):
-    def __init__(self, ntoken=0, d_output=0, d_model=0, nhead=0, d_hid=0, nlayers=0, dropout=0.2, model_setup=None):
+    def __init__(self,model_setup:ModelSetup):
         self.super_init = False
         self.model_setup = model_setup
         
 
     def forward(self, src: Tensor) -> Tensor:
         if not self.super_init:
-            self.model_setup['ntoken'] = src.size(-1)
-            self.model_setup['seq_len'] = src.size(1)
+            self.model_setup.ntoken= src.size(-1)
+            self.model_setup.seq_len = src.size(1)
             super().__init__(model_setup = self.model_setup)
-            self.result_encoder = nn.Linear(self.model_setup['d_output'] * self.model_setup['seq_len'], self.model_setup['d_result'])
+            self.result_encoder = nn.Linear(self.model_setup.d_output * self.model_setup.seq_len, self.model_setup.d_result)
             self.sm = torch.nn.Softmax(dim=-1)
             self.to(src.device)
             self.super_init = True

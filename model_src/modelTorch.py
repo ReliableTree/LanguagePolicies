@@ -12,6 +12,7 @@ from LanguagePolicies.model_src.transformerAttention import TransformerAttention
 
 from LanguagePolicies.utils.Transformer import TransformerModel
 from LanguagePolicies.utils.Transformer import generate_square_subsequent_mask
+from MetaWorld.utilsMW.model_setup_obj import ModelSetup
 
 import torch
 import torch.nn as nn
@@ -36,62 +37,15 @@ contr_trans:                 d_output = self.model_setup['contr_trans']['d_outpu
 '''
 
 class PolicyTranslationModelTorch(nn.Module):
-    def __init__(self, od_path, glove_path = None, model_setup=None, device = 'cpu'):
+    def __init__(self, od_path, glove_path = None, model_setup:ModelSetup = None, device = 'cpu'):
         super().__init__()
         self.device = device
         self.model_setup         = model_setup
-        self.units               = 32
-        self.output_dims         = 7
-        self.basis_functions     = 11
-        self.ptgloabl_units      = 42
-        self.kernel = None
-
-        if od_path != "":                
-            od_path    = pathlib.Path(od_path)/"saved_model" 
-            self.frcnn = tf.saved_model.load(str(od_path))
-            self.frcnn = self.frcnn.signatures['serving_default']
-            self.frcnn.trainable = False
-
-        if model_setup['obj_embedding']['use_obj_embedding']:
-            self.obj_embedding = None
-        if model_setup['attn_trans']['use_attn_trans']:
-            self.attention = None
-        else:
-            self.attention = TopDownAttentionTorch(units=64)
-
 
         self.embedding = GloveEmbeddings(file_path=glove_path)
-        if model_setup['lang_trans']['use_lang_trans']:
-            self.transformer_seq_embedding = None
-            self.lang_trans  = None
-        else:
-            self.lng_gru   = None
-
-
         self.dout      = nn.Dropout(p=0.25)
 
-        # Units needs to be divisible by 7
-        # Units needs to be divisible by 7
-        '''if model_setup['contr_trans']['use_contr_trans']:
-            self.controller_transformer = None
-            count_emb_dim = model_setup['contr_trans']['count_emb_dim']
-            self.count_embedding = nn.Embedding(350, count_emb_dim)
-        else:
-            self.dmp_dt_model = None
-            self.controller = FeedBackControllerTorch(
-                robot_state_size=self.units,
-                dimensions=self.output_dims,
-                basis_functions=self.basis_functions,
-                cnfeatures_size=self.units + self.output_dims + 5,
-                use_LSTM = model_setup['LSTM']['use_LSTM'] 
-            )'''
-        ###muss gelöscht werden
-        self.controller_transformer = None
-
-        self.last_language = None
-
         self.plan_nn = None
-        self.prediction_nn = None
 
         self.memory = {}
 
@@ -107,36 +61,14 @@ class PolicyTranslationModelTorch(nn.Module):
         self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
 
 
-    def forward(self, inputs, gt_attention = None, gt_tjkt=None, mean_over_do = False, optimize = False):
+    def forward(self, inputs):
+        #print(f'inptuts: {inputs}')
         result = {}
-        ###
-        if 'meta_world' in self.model_setup and self.model_setup['meta_world']['use']:
-            inpt_features = inputs[:,:1].transpose(0,1)
-        else:
-            seq_len = 350
-            language_in   = inputs[0]
-            features   = inputs[1]                          #16x6x5 first entry is object class
-            robot      = inputs[2]                           #16x350x7
-            if self.model_setup['use_memory']:
-                self.use_memory(robot[:,0], 'start_position')
-
-            if (self.last_language is None) or (not torch.equal(language_in, self.last_language)):
-                pass   #reactivate if recurrent
-            self.language = self.get_language(language_in)               #16 x 32
-
-            # Calculate attention and expand it to match the feature size
-            
-            inpt_features, diff = self.get_inpt_features(features, gt_attention, robot) #1x16x53
-            result['atn']     = self.obj_atn
-            result['diff']    = diff
-
+        inpt_features = inputs[:,:1].transpose(0,1)
         current_plan = self.get_plan(inpt_features) #350x16x8
-        
         current_plan = current_plan.transpose(0,1) #16x350x8
         result['gen_trj'] = current_plan
         result['inpt_trj'] = current_plan
-        '''result['gen_trj'] = current_plan[:,:,:-1]
-        result['phs']     = current_plan[:,:,-1]'''
         return result
 
 
@@ -192,15 +124,6 @@ class PolicyTranslationModelTorch(nn.Module):
             language = nn.Softmax(dim=-1)(language.squeeze())
 
         language = language.squeeze()
-        '''if self.model_setup['use_memory']:
-            if self.model_setup['train']:
-                if self.mem is None:
-                    self.mem = language
-                else:
-                    self.mem = torch.cat((self.mem, language))
-            else:
-                print('load')
-                language = self.find_closest_match(language)'''
         
         return language.squeeze() 
 
@@ -263,18 +186,13 @@ class PolicyTranslationModelTorch(nn.Module):
         return smoothed.reshape([*shape])
 
     def get_plan(self, inpt_features):
-        in_transformer = inpt_features.repeat(self.model_setup['plan_nn']['plan']['seq_len'], 1, 1)
+        in_transformer = inpt_features.repeat(self.model_setup.seq_len, 1, 1)
         if (self.plan_nn is None):
-            model_setup = self.model_setup['plan_nn']['plan']
-            #self.plan_embedding = torch.nn.Linear(inpt_features.size(-1), 50).to(in_transformer.device)
-            #self.plan_nn = TransformerUpConv(model_setup).to(inpt_features.device)
-            model_setup['ntoken'] = inpt_features.size(-1)
-            self.plan_nn = TransformerModel(model_setup=self.model_setup['plan_nn']['plan']).to(inpt_features.device)
+            model_setup = self.model_setup
+            model_setup.ntoken = inpt_features.size(-1)
+            self.plan_nn = TransformerModel(model_setup=self.model_setup).to(inpt_features.device)
         plan = self.plan_nn.forward(in_transformer) #350x16x8
-        #print(f'plan sape: {plan.shape}')
 
-        #smooth_plan = self.smoothing(plan.transpose(0,2)).transpose(0,2)
-        #print(f'smooth plan shape: {smooth_plan.shape}')
         return plan
     
 
