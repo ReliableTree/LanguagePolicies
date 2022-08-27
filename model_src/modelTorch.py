@@ -57,14 +57,13 @@ class PolicyTranslationModelTorch(nn.Module):
         for name in names:
             self.memory[name] = torch.load(path + name, map_location='cuda:0')
 
-    def build_lang_gru(self, input, bias = True):
-        self.lng_gru = nn.GRU(input.size(-1), self.units, 1, batch_first = True, device=input.device, bias = bias)
-
-
     def forward(self, inputs):
-        #print(f'inptuts: {inputs}')
+        #print(f'inptuts: {inputs[0,:3]}')
         result = {}
-        inpt_features = inputs[:,:1].transpose(0,1)
+        #inpt_features = inputs[:,:1].transpose(0,1)
+        inpt_features = inputs.transpose(0,1)
+        
+        #print(f'inpt: {inpt_features.shape}')
         current_plan = self.get_plan(inpt_features) #350x16x8
         current_plan = current_plan.transpose(0,1) #16x350x8
         result['gen_trj'] = current_plan
@@ -186,7 +185,8 @@ class PolicyTranslationModelTorch(nn.Module):
         return smoothed.reshape([*shape])
 
     def get_plan(self, inpt_features):
-        in_transformer = inpt_features.repeat(self.model_setup.seq_len, 1, 1)
+        #in_transformer = inpt_features.repeat(self.model_setup.seq_len, 1, 1)
+        in_transformer = inpt_features
         if (self.plan_nn is None):
             model_setup = self.model_setup
             model_setup.ntoken = inpt_features.size(-1)

@@ -1,4 +1,5 @@
 import math
+from statistics import mode
 from typing import Tuple
 
 import torch
@@ -27,6 +28,7 @@ class TransformerModel(nn.Module):
         self.encoder = nn.Linear(ntoken, d_model)
         self.d_model = d_model
         self.decoder = nn.Linear(d_model, d_output)
+        self.mask = generate_square_subsequent_mask(sz=model_setup.seq_len).to('cuda')
 
         #self.init_weights()
 
@@ -45,10 +47,9 @@ class TransformerModel(nn.Module):
         Returns:
             output Tensor of shape [seq_len, batch_size, ntoken]
         """
-
         src = self.encoder(src) * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
-        output = self.transformer_encoder(src, src_mask)
+        output = self.transformer_encoder(src, self.mask[:src.size(0), :src.size(0)])
         output = self.decoder(output)
         return output
 
@@ -61,7 +62,6 @@ class TailorTransformer(TransformerModel):
     def forward(self, src: Tensor) -> Tensor:
         if not self.super_init:
             self.model_setup.ntoken= src.size(-1)
-            self.model_setup.seq_len = src.size(1)
             super().__init__(model_setup = self.model_setup)
             self.result_encoder = nn.Linear(self.model_setup.d_output * self.model_setup.seq_len, self.model_setup.d_result)
             #self.sm = torch.nn.Softmax(dim=-1)
