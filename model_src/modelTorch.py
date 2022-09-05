@@ -185,8 +185,8 @@ class PolicyTranslationModelTorch(nn.Module):
         return smoothed.reshape([*shape])
 
     def get_plan(self, inpt_features):
-        #in_transformer = inpt_features.repeat(self.model_setup.seq_len, 1, 1)
-        in_transformer = inpt_features
+        in_transformer = inpt_features[:1].repeat(self.model_setup.seq_len, 1, 1)
+        #in_transformer = inpt_features
         if (self.plan_nn is None):
             model_setup = self.model_setup
             model_setup.ntoken = inpt_features.size(-1)
