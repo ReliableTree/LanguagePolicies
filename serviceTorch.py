@@ -9,7 +9,7 @@ import sys
 from torch._C import dtype
 import rclpy
 from policy_translation.srv import NetworkPT, TuneNetwork
-from model_src.modelTorch import PolicyTranslationModelTorch
+from model_src.modelTorch import WholeSequenceActor
 from utils.network import Network
 from utils.tf_util import trainOnCPU, limitGPUMemory
 from utils.intprim.gaussian_model import GaussianModel
@@ -81,7 +81,7 @@ else:
 def setup_model(device = 'cpu', batch_size = 1000):
     with open(MODEL_SETUP, 'rb') as f:
         model_setup = pickle.load(f)
-    model   = PolicyTranslationModelTorch(od_path=FRCNN_PATH, glove_path=GLOVE_PATH, model_setup=model_setup).to(device)
+    model   = WholeSequenceActor(od_path=FRCNN_PATH, glove_path=GLOVE_PATH, model_setup=model_setup).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 

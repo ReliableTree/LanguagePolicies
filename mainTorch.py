@@ -2,7 +2,7 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-from model_src.modelTorch import PolicyTranslationModelTorch
+from model_src.modelTorch import WholeSequenceActor
 from utils.networkTorch import NetworkTorch
 import hashids
 import time
@@ -60,7 +60,7 @@ def init_weights(network):
             torch.nn.init.orthogonal_(para)
 
 def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, tboard, model_setup, train_size = 1):
-    model   = PolicyTranslationModelTorch(od_path="", glove_path=path_dict['GLOVE_PATH'], model_setup=model_setup).to(device)
+    model   = WholeSequenceActor(od_path="", glove_path=path_dict['GLOVE_PATH'], model_setup=model_setup).to(device)
     #print(path_dict['TRAIN_DATA_TORCH'])
     train_data = TorchDataset(path = path_dict['TRAIN_DATA_TORCH'], device=device, on_device=False)
     train_indices = torch.randperm(int(len(train_data)))

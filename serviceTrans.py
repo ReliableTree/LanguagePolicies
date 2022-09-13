@@ -9,7 +9,7 @@ import sys
 from torch._C import dtype
 import rclpy
 from policy_translation.srv import NetworkPT, TuneNetwork
-from model_src.modelTorch import PolicyTranslationModelTorch
+from model_src.modelTorch import WholeSequenceActor
 from utils.tf_util import trainOnCPU, limitGPUMemory
 from utils.safe_cfeatures import save_dict_of_features
 import tensorflow as tf
@@ -84,7 +84,7 @@ def setup_model(device = 'cpu', batch_size = 32):
     model_setup['use_memory'] = True
     model_setup['train'] = False
     model_setup['use_dropout'] = True
-    model   = PolicyTranslationModelTorch(od_path=FRCNN_PATH, glove_path=GLOVE_PATH, model_setup=model_setup).to(device)
+    model   = WholeSequenceActor(od_path=FRCNN_PATH, glove_path=GLOVE_PATH, model_setup=model_setup).to(device)
     train_data = TorchDataset(path = TRAIN_DATA_TORCH, device=device, on_device=False)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     if 'use_memory' in model_setup and model_setup['use_memory']:

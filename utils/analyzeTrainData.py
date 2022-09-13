@@ -19,7 +19,7 @@ from model_src.feedbackcontroller import FeedbackController
 from model_src.feedbackcontrollerTorch import FeedBackControllerTorch
 from model_src.attentionTorch import TopDownAttentionTorch
 from model_src.model import PolicyTranslationModel
-from model_src.modelTorch import PolicyTranslationModelTorch
+from model_src.modelTorch import WholeSequenceActor
 GLOVE_PATH      = "../GDrive/glove.6B.50d.txt"
 
 
@@ -125,7 +125,7 @@ class tryFeedBackControllerTorch(nn.Module):
 class try_model():
     def __init__(self) -> None:
         self.modeltf   = PolicyTranslationModel(od_path="", glove_path=GLOVE_PATH)
-        self.modeltorch = PolicyTranslationModelTorch(od_path="", glove_path=GLOVE_PATH)
+        self.modeltorch = WholeSequenceActor(od_path="", glove_path=GLOVE_PATH)
         self.d_in_torch = (
             tf.ones((16,5), dtype=tf.float32),
             torch.ones((16,6,5), dtype=torch.float32),

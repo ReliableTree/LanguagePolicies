@@ -13,17 +13,16 @@ class TransformerModel(nn.Module):
     def __init__(self, model_setup:ModelSetup = None):
         super().__init__()
         self.model_type = 'Transformer'
-        if model_setup is not None:
-            ntoken = model_setup.ntoken
-            d_output = model_setup.d_output
-            d_model = model_setup.d_model
-            nhead = model_setup.nhead
-            d_hid = model_setup.d_hid
-            nlayers = model_setup.nlayers
-            dropout = model_setup.dropout
+        ntoken = model_setup.ntoken
+        d_output = model_setup.d_output
+        d_model = model_setup.d_model
+        nhead = model_setup.nhead
+        d_hid = model_setup.d_hid
+        nlayers = model_setup.nlayers
+        dropout = model_setup.dropout
 
         self.pos_encoder = PositionalEncoding(d_model, dropout)
-        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
+        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, batch_first=True)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.encoder = nn.Linear(ntoken, d_model)
         self.d_model = d_model
@@ -69,13 +68,9 @@ class TailorTransformer(TransformerModel):
             self.super_init = True
 
         #src: batch, seq, dim
-        src = src.transpose(0,1)
-
         #src = seq, batch, dim
         #print(f'src shape: {src.shape}')
         pre_result = super().forward(src)
-
-        pre_result = pre_result.transpose(0,1)
 
         #preresult = batch, seq, dim
         pre_result = pre_result.reshape(pre_result.size(0), -1)

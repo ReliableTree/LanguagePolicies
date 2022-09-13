@@ -5,7 +5,7 @@ import tensorflow as tf
 import sys
 import numpy as np
 from LanguagePolicies.utils.graphsTorch import TBoardGraphsTorch
-from MetaWorld.utilsMW.metaOptimizer import SignalModule, TaylorSignalModule, meta_optimizer, tailor_optimizer, MetaModule
+from MetaWorld.utilsMW.metaOptimizer import SignalModule, WholeSequenceCritic, meta_optimizer, tailor_optimizer, MetaModule
 from MetaWorld.utilsMW.dataLoaderMW import TorchDatasetTailor
 
 import torch
@@ -111,38 +111,11 @@ class NetworkMeta(nn.Module):
         self.tailor_modules = []
         self.meta_module = []
         for i in range(len(self.tailor_models)):
-            self.tailor_modules.append(TaylorSignalModule(model=self.tailor_models[i], loss_fct=lfp, lr = self.mlr, mlr = self.mlr))
+            self.tailor_modules.append(WholeSequenceCritic(model=self.tailor_models[i], loss_fct=lfp, lr = self.mlr, mlr = self.mlr))
         self.model_state_dict = self.model.state_dict()
                 
         self.meta_module = MetaModule(main_signal = self.signal_main, tailor_signals=self.tailor_modules, lr = self.mo_lr, writer = self.write_tboard_scalar, device=inpt.device)
 
-        self.setTailorDataset()
-        for tm in self.tailor_modules:
-            tm.init_model(inpt = self.tailor_setup_inpt)
-
-    def setTailorDataset(self):
-
-        policy = self.meta_module
-        policy.eval()
-        policy.return_mode = 1
-        gt_policy_success = False
-        while not gt_policy_success:
-            envs = self.successSimulation.get_env(n=2, env_tag = self.env_tag)
-            result = self.successSimulation.get_success(policy = policy, envs=envs)
-            if result is not False:
-                trajectories, inpt_obs, label, success, ftrj = result
-                gt_policy_success = True
-        self.trajectories = trajectories
-        self.inpt_obs = inpt_obs
-        self.success = success
-        self.ftrj = ftrj
-        for step, (d_in, d_out) in enumerate(self.train_ds):
-            self.inpt_obs = torch.cat((self.inpt_obs, d_in[:,:1]), dim = 0)
-            self.trajectories = torch.cat((self.trajectories, d_out))
-            self.ftrj = torch.cat((self.ftrj, d_out))
-            self.success = torch.cat((self.success, torch.ones(d_in.size(0), device = d_in.device)))
-        tailor_data = TorchDatasetTailor(trajectories= self.trajectories, obsv=self.inpt_obs, success=self.success, ftrj = self.ftrj)
-        self.tailor_loader = DataLoader(tailor_data, batch_size=20, shuffle=True)
 
     def loadTailorDataset(self, path):
         obs_path = path + 'obs'
@@ -161,7 +134,7 @@ class NetworkMeta(nn.Module):
     def train_tailor(self, ):
         trajectories, inpt_obs, success, ftrjs = self.successSimulation(policy = self.model, env_tag = self.env_tag, n = 10)
         inpt = torch.concat((trajectories, inpt_obs), dim = 0)
-        debug_dict = tailor_optimizer(tailor_modules=self.tailor_modules, inpt=inpt, label=success)
+        debug_dict = tailor_optimizer(critic=self.tailor_modules, inpt=inpt, label=success)
         self.write_tboard_train_scalar(debug_dict=debug_dict)
 
 
@@ -238,7 +211,7 @@ class NetworkMeta(nn.Module):
     
     
     def tailor_step(self, succ, failed):
-        debug_dict = tailor_optimizer(tailor_modules = self.tailor_modules, succ=succ, failed=failed)
+        debug_dict = tailor_optimizer(critic = self.tailor_modules, succ=succ, failed=failed)
         self.write_tboard_scalar(debug_dict=debug_dict, train=True)
         return debug_dict
     
