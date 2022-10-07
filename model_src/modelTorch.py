@@ -1,10 +1,8 @@
 from abc import abstractclassmethod
-from distutils.log import debug
-from time import sleep
 import typing
 import torch
 import torch.nn as nn
-from LanguagePolicies.utils.Transformer import TailorTransformer, TransformerModel
+from LanguagePolicies.utils.Transformer import CriticTransformer, TransformerModel
 from MetaWorld.utilsMW.model_setup_obj import ModelSetup
 from MetaWorld.searchTest.utils import calcMSE
 
