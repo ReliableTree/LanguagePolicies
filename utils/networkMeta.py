@@ -646,6 +646,7 @@ class NetworkMeta(nn.Module):
         return (loss, debug_dict)
     
     def loadingBar(self, count, total, size, addition="", end=False):
+        return None
         if total == 0:
             percent = 0
         else:
