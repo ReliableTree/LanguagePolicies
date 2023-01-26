@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
 from hashids import Hashids
-import cv2
 from LanguagePolicies.utils.voice import Voice
 import os
 from MetaWorld.searchTest.toyEnvironment import make_sliding_tol
@@ -87,24 +86,6 @@ class TBoardGraphsTorch():
         names = ["", "ysr", "rsr", "gsr", "bsr", "psr", "ylr", "rlr", "glr", "blr", "plr", "yss", "rss", "gss", "bss", "pss", "yls", "rls", "gls", "bls", "pls"]
         return names[id]
 
-    def plotImageRegions(self, image, image_dict, stepid):
-        # Visualization of the results of a detection.
-        num_detected = len([v for v in image_dict["detection_scores"][0] if v > 0.5]) 
-        image_np     = image.numpy()       
-        for i in range(num_detected):
-            ymin, xmin, ymax, xmax = image_dict['detection_boxes'][0][i,:]
-            pt1 = (int(xmin*image_np.shape[1]), int(ymin*image_np.shape[0]))
-            pt2 = (int(xmax*image_np.shape[1]), int(ymax*image_np.shape[0]))
-            image_np = cv2.rectangle(image_np, pt1, pt2, (255, 0, 0), 2)
-            image_np = cv2.putText(image_np, self.idToText(image_dict['detection_classes'][0][i]) + " {:.1f}%".format(image_dict["detection_scores"][0][i] * 100), pt1, cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 1, cv2.LINE_AA)
-
-        fig = plt.figure()
-        plt.imshow(image_np)
-
-        result = np.expand_dims(self.finishFigure(fig), 0)
-        plt.close()
-        with self.__tboard_validation.as_default():
-            tf.summary.image("Image", data=result, step=stepid)
 
     def plotAttention(self, attention_weights, image_dict, language, stepid):
         tf_attention_weights = self.torch2tf(attention_weights)

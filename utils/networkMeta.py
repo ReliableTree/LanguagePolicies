@@ -78,7 +78,7 @@ class NetworkMeta(nn.Module):
             for step, (d_in, d_out) in enumerate(self.train_ds):
                 result = self.model(inputs=d_in)
                 break
-        self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2) 
+        self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=1e-2)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 40, self.gamma_sl, verbose=True)
         #self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 40, 0.9, verbose=True)
 
@@ -353,7 +353,7 @@ class NetworkMeta(nn.Module):
             if complete:
                 num_envs = 200
             else:
-                num_envs = 10
+                num_envs = 50
             num_eval = 10
             
             #torch.manual_seed(1)
@@ -429,10 +429,6 @@ class NetworkMeta(nn.Module):
             if (mean_success >= 0.0 and complete) or True:
                 fail = ~success
                 fail_opt = ~success_opt
-                '''self.trajectories = torch.cat((self.trajectories, trajectories[:num_exp]), dim=0)[-30000:]
-                self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs[:num_exp]), dim=0)[-30000:]
-                self.success = torch.cat((self.success, success[:num_exp]), dim=0)[-30000:]
-                self.ftrj = torch.cat((self.ftrj, ftrjs[:num_exp]))'''
 
                 self.trajectories = torch.cat((self.trajectories, trajectories_opt[:num_exp]), dim=0)[-30000:]
                 self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs_opt[:num_exp]), dim=0)[-30000:]
@@ -446,6 +442,7 @@ class NetworkMeta(nn.Module):
                 print(f'num examples: {len(self.success)}')
                 print(f'num demonstrations: {len(train_data)}')
                 self.write_tboard_scalar({'num examples':torch.tensor(len(self.success))}, train=False)
+                self.write_tboard_scalar({'num demonstrations':torch.tensor(len(train_data))}, train=False)
                 tailor_data = TorchDatasetTailor(trajectories= self.trajectories, obsv=self.inpt_obs, success=self.success, ftrj = self.ftrj)
                 self.tailor_loader = DataLoader(tailor_data, batch_size=20, shuffle=True)
                 self.init_train = False
