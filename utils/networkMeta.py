@@ -395,9 +395,7 @@ class NetworkMeta(nn.Module):
                 mean_success_opt = success_opt.type(torch.float).mean()
             else:
                 mean_success_opt = 0
-            if mean_success_opt > self.last_mean_success:
-                policy.max_steps = policy.max_steps * 1.1
-                self.last_mean_success = mean_success_opt
+
             
             '''if tailor_success_optimized * 0.8 > mean_success_opt:
                 policy.max_steps = policy.max_steps * 1.1
@@ -427,6 +425,10 @@ class NetworkMeta(nn.Module):
                 #self.model.load_state_dict(self.model_state_dict)
             num_exp = 10
             if (mean_success >= 0.0 and complete) or True:
+                mean_success_opt_number = success_opt[:num_exp].type(torch.float).mean()
+                if mean_success_opt_number > self.last_mean_success:
+                    policy.max_steps = policy.max_steps * 1.1
+                    self.last_mean_success = mean_success_opt_number
                 fail = ~success
                 fail_opt = ~success_opt
 
